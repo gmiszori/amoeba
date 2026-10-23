@@ -23,7 +23,8 @@ type Welcome struct {
 }
 
 type Error struct {
-	Type    string `json:"type"` // error
+	Type    string `json:"type"`           // error
+	Code    string `json:"code,omitempty"` // "name" when the username was rejected
 	Message string `json:"message"`
 }
 

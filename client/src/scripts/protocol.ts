@@ -27,7 +27,7 @@ export type ServerMessage =
   | { type: "lobby" }
   | { type: "queued" }
   | { type: "kicked" }
-  | { type: "error"; message: string }
+  | { type: "error"; code?: "name"; message: string }
   | GameState;
 
 export type ClientMessage =
@@ -38,7 +38,7 @@ export type ClientMessage =
   | { type: "rematch" }
   | { type: "leave" };
 
-export const MAX_NAME_LENGTH = 32;
+export const MAX_NAME_LENGTH = 16;
 
 const NAME_CHARS = /^[\p{L}\p{M}\p{Nd} _.\-]+$/u;
 

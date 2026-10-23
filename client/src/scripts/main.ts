@@ -107,17 +107,28 @@ function handleMessage(msg: ServerMessage): void {
       wantQueue = false;
       show("lobby");
       break;
-    case "queued":
+    case "queued": {
+      // Only remember names the server accepted.
+      const name = normalizeName(ui.name.value);
+      if (name) store.set(NAME_KEY, name);
       game = null;
       wantQueue = true;
       show("queue");
       break;
+    }
     case "game":
       wantQueue = false;
       updateGame(msg);
       break;
     case "error":
-      toast(msg.message);
+      if (msg.code === "name") {
+        // The server rejected the username: back to the lobby to pick another.
+        wantQueue = false;
+        show("lobby");
+        ui.nameError.textContent = msg.message;
+      } else {
+        toast(msg.message);
+      }
       break;
     case "kicked":
       conn.stop();
@@ -137,14 +148,13 @@ ui.form.addEventListener("submit", (e) => {
   const name = normalizeName(ui.name.value);
   if (!name) {
     ui.nameError.textContent = ui.name.value.trim()
-      ? "Use letters, digits, spaces and _ - . only (max 32)."
+      ? "Use letters, digits, spaces and _ - . only (max 16)."
       : "Pick a username first.";
     ui.name.focus();
     return;
   }
   ui.nameError.textContent = "";
   ui.name.value = name;
-  store.set(NAME_KEY, name);
   ui.name.blur();
   wantQueue = true;
   joinQueue();
@@ -159,7 +169,7 @@ ui.cancel.addEventListener("click", () => {
 });
 
 function joinQueue(): boolean {
-  const name = store.get(NAME_KEY) ?? normalizeName(ui.name.value);
+  const name = normalizeName(ui.name.value);
   if (!name || !conn.send({ type: "join", name })) return false;
   show("queue");
   return true;

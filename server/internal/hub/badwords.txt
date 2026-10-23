@@ -1,0 +1,73 @@
+# Words that may not appear in usernames, English and Hungarian.
+#
+# Names and these entries are both normalised before matching: lowercased,
+# accents removed (ő → o), leetspeak undone (sh1t → shit), separators dropped
+# (f.u.c.k → fuck) and repeated letters collapsed (fuuuck → fuck).
+#
+# A plain line blocks the word anywhere in the name, even inside another word.
+# A line starting with "=" only blocks it as a whole word, for short words that
+# hide inside innocent ones (class, Szarvas, Hancock).
+#
+# Edit freely; changes take effect when the server is rebuilt.
+
+# --- English ---
+fuck
+shit
+cunt
+nigger
+nigga
+faggot
+bitch
+whore
+pussy
+asshole
+slut
+porn
+penis
+vagina
+retard
+wank
+twat
+hitler
+rapist
+dildo
+jizz
+milf
+=ass
+=arse
+=dick
+=cock
+=cum
+=sex
+=fag
+=anal
+=tits
+=boobs
+=rape
+=piss
+=nazi
+=kys
+=hoe
+
+# --- Hungarian ---
+fasz
+geci
+kurva
+picsa
+punci
+csicska
+ribanc
+lotyo
+kocsog
+baszd
+baszodj
+bassza
+bazdmeg
+bazmeg
+seggfej
+=segg
+=szar
+=buzi
+=pina
+=fing
+=baszo

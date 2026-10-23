@@ -8,12 +8,15 @@ import (
 )
 
 // MaxNameLength is the longest allowed username, in characters.
-const MaxNameLength = 32
+const MaxNameLength = 16
 
-var ErrInvalidName = errors.New("usernames are 1–32 characters: letters, digits, spaces and _ - .")
+var (
+	ErrInvalidName   = errors.New("Usernames are 1–16 characters: letters, digits, spaces and _ - .")
+	ErrOffensiveName = errors.New("That username isn't allowed. Please pick another one.")
+)
 
 // NormalizeName trims the name, collapses runs of whitespace into single
-// spaces and checks it against the allowed character set.
+// spaces and checks it against the allowed character set and the bad-word list.
 func NormalizeName(raw string) (string, error) {
 	name := strings.Join(strings.Fields(raw), " ")
 	if n := utf8.RuneCountInString(name); n == 0 || n > MaxNameLength {
@@ -23,6 +26,9 @@ func NormalizeName(raw string) (string, error) {
 		if !unicode.IsLetter(r) && !unicode.IsMark(r) && !unicode.IsDigit(r) && !strings.ContainsRune(" _-.", r) {
 			return "", ErrInvalidName
 		}
+	}
+	if isOffensive(name) {
+		return "", ErrOffensiveName
 	}
 	return name, nil
 }

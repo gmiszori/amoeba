@@ -13,7 +13,7 @@ decides the winner. Clients only send intentions.
 | type      | fields          | meaning |
 |-----------|-----------------|---------|
 | `hello`   | `token?`        | First message on every connection. Send the stored token to resume a session; omit it to get a new one. |
-| `join`    | `name`          | Enter matchmaking with this username (1–32 chars: letters, digits, spaces, `_ - .`). Also leaves a finished game. |
+| `join`    | `name`          | Enter matchmaking with this username (1–16 chars: letters, digits, spaces, `_ - .`). Also leaves a finished game. |
 | `cancel`  |                 | Leave the matchmaking queue. |
 | `move`    | `x`, `y`        | Place your mark at cell (x, y). Integers, \|x\|,\|y\| ≤ 1,000,000. |
 | `rematch` |                 | Ask for (or accept) a rematch after a game ends. Colours swap. |
@@ -27,7 +27,7 @@ decides the winner. Clients only send intentions.
 | `lobby`   |        | Not queued, not in a game. |
 | `queued`  |        | Waiting for an opponent. |
 | `game`    | see below | Full state of your current match. Sent whenever it changes. |
-| `error`   | `message` | A request was rejected. Show it, nothing else changes. |
+| `error`   | `code?`, `message` | A request was rejected. `code` is `name` when the username was invalid or blocked (see `server/internal/hub/badwords.txt`); the player is back in the lobby. |
 | `kicked`  |        | The same session connected from elsewhere; this connection closes. Don't reconnect automatically. |
 
 ### `game`

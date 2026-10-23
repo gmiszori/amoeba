@@ -19,6 +19,10 @@ Browser ─► Cloudflare ─► [cloudflared] ─► [web: Caddy :80] ─┬─
 | `client/` | Astro static site; the game is a plain TypeScript canvas app. Also holds the `Caddyfile`; the production image is Caddy serving the build. |
 | `docs/protocol.md` | The WebSocket message protocol. |
 
+Usernames are 1–16 characters and are checked against an English and
+Hungarian bad-word list in `server/internal/hub/badwords.txt`. It's plain
+text, so add words there and rebuild the server.
+
 Everything runs in Docker; you don't need Go or Node installed.
 
 ## Running

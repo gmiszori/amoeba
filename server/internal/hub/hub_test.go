@@ -2,6 +2,7 @@ package hub
 
 import (
 	"context"
+	"errors"
 	"net/http/httptest"
 	"strings"
 	"testing"
@@ -19,6 +20,7 @@ type message struct {
 	Token   string `json:"token"`
 	Name    string `json:"name"`
 	Message string `json:"message"`
+	Code    string `json:"code"`
 }
 
 type testClient struct {
@@ -185,7 +187,7 @@ func TestNormalizeName(t *testing.T) {
 		"  Gergő  ":             "Gergő",
 		"a   b":                 "a b",
 		"x_y-z.9":               "x_y-z.9",
-		strings.Repeat("é", 32): strings.Repeat("é", 32),
+		strings.Repeat("é", 16): strings.Repeat("é", 16),
 		"Zoë\tKovács":           "Zoë Kovács",
 	}
 	for in, want := range valid {
@@ -193,9 +195,41 @@ func TestNormalizeName(t *testing.T) {
 			t.Errorf("NormalizeName(%q) = %q, %v; want %q", in, got, err, want)
 		}
 	}
-	for _, in := range []string{"", "   ", strings.Repeat("a", 33), "<script>", "emoji😀", "a/b"} {
+	for _, in := range []string{"", "   ", strings.Repeat("a", 17), "<script>", "emoji😀", "a/b"} {
 		if _, err := NormalizeName(in); err == nil {
 			t.Errorf("NormalizeName(%q) accepted an invalid name", in)
 		}
+	}
+}
+
+func TestOffensiveNames(t *testing.T) {
+	blocked := []string{
+		"fuck", "FuCk you", "f.u.c.k", "f u c k", "fuuuuck", "sh1t", "5hit", "s1ut",
+		"big ass", "assss", "Kurva", "köcsög", "kocsog", "geci123", "faszfej", "Szar",
+		"buzi", "baszódj", "Hitler", "x_dick_x", "bazdmeg",
+	}
+	for _, name := range blocked {
+		if _, err := NormalizeName(name); !errors.Is(err, ErrOffensiveName) {
+			t.Errorf("NormalizeName(%q) = %v; want ErrOffensiveName", name, err)
+		}
+	}
+	// Innocent names that contain a short blocked word inside another word.
+	allowed := []string{
+		"As", "Class", "Hancock", "Dickens", "Szarvas", "Szarka Anna", "Buzinkay",
+		"Assisi", "Cassandra", "Grape", "Sussex", "Babaszoba", "Gergő", "Pass",
+	}
+	for _, name := range allowed {
+		if _, err := NormalizeName(name); err != nil {
+			t.Errorf("NormalizeName(%q) = %v; want it allowed", name, err)
+		}
+	}
+}
+
+func TestBadNameIsRejectedWithCode(t *testing.T) {
+	c := dial(t, startServer(t, time.Minute))
+	c.hello("")
+	c.send(protocol.Inbound{Type: "join", Name: "fuck"})
+	if e := c.expect("error", nil); e.Code != "name" {
+		t.Fatalf("error code %q, want name", e.Code)
 	}
 }

@@ -189,7 +189,8 @@ func (h *Hub) disconnect(c *client) {
 func (h *Hub) join(s *session, rawName string) {
 	name, err := NormalizeName(rawName)
 	if err != nil {
-		s.client.sendError(err.Error())
+		h.removeFromQueue(s)
+		s.client.send(protocol.Error{Type: "error", Code: "name", Message: err.Error()})
 		return
 	}
 	s.name = name
