@@ -23,4 +23,4 @@ RUN setcap -r /usr/bin/caddy && chown 65534:65534 /data /config
 COPY Caddyfile /etc/caddy/Caddyfile
 COPY --from=build /app/dist /srv
 USER 65534:65534
-EXPOSE 80 443 443/udp
+EXPOSE 80 443

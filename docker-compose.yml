@@ -1,5 +1,7 @@
 # Production stack:   docker compose up --build -d
-# Set DOMAIN in .env; Caddy serves it on ports 80 and 443 with automatic HTTPS.
+# Set DOMAIN in .env; Caddy serves it with automatic HTTPS. Host ports 80 and
+# 443 belong to the webserver repo's proxy (github.com/gmiszori/webserver),
+# which must be running first: it creates the shared "webserver" network.
 name: amoeba
 
 # Every container: read-only filesystem, no Linux capabilities, no privilege
@@ -34,6 +36,11 @@ services:
     # Lets the unprivileged Caddy user bind 80 and 443 without capabilities.
     sysctls:
       net.ipv4.ip_unprivileged_port_start: 80
+    networks:
+      default:
+      # Not published on the host: the webserver proxy routes this domain here.
+      webserver:
+        aliases: [amoeba]
     volumes:
       - caddy_data:/data # TLS certificates; keep across restarts
       - caddy_config:/config
@@ -42,11 +49,11 @@ services:
     depends_on:
       server:
         condition: service_healthy
-    ports:
-      - "80:80"
-      - "443:443"
-      - "443:443/udp" # HTTP/3
 
 volumes:
   caddy_data:
   caddy_config:
+
+networks:
+  webserver:
+    external: true

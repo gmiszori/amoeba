@@ -9,9 +9,14 @@ lose. Built mobile-first so it plays well on phones and iPads.
 ## Architecture
 
 ```
-Browser ─► [web: Caddy :80/:443, automatic HTTPS] ─┬─ static Astro build
-                                                   └─ /ws ─► [server: Go :8080]
+Browser ─► [webserver proxy :80/:443] ─► [web: Caddy, automatic HTTPS] ─┬─ static Astro build
+                                                                        └─ /ws ─► [server: Go :8080]
 ```
+
+Host ports 80 and 443 belong to the shared proxy in
+[webserver](https://github.com/gmiszori/webserver), so several sites can run
+on one server. It passes TLS through untouched; this repo's Caddy still holds
+the certificate.
 
 | Directory | What |
 |-----------|------|
@@ -27,13 +32,17 @@ Everything runs in Docker; you don't need Go or Node installed.
 
 ## Running
 
+For day-to-day work use the [development stack](#development-hot-reload). To
+run the production stack locally, start the webserver proxy first, with
+`PUBLIC_BIND_IP=127.0.0.1` and `AMOEBA_DOMAIN=localhost` in its `.env`. Then:
+
 ```bash
 cp .env.example .env   # set DOMAIN=localhost for a local run
 docker compose up --build
 ```
 
 Open https://localhost (the certificate is self-signed locally, so the browser
-warns once; use `DOMAIN=http://localhost` for plain HTTP instead). To play
+warns once). To play
 against yourself, open a second browser profile or a private window (tabs of
 the same browser share an identity).
 
@@ -59,8 +68,9 @@ docker build --target test server
 
 1. Point your domain's DNS `A` (and `AAAA`, if the server has IPv6) record at
    the server.
-2. Make sure inbound TCP 80 and 443 (and UDP 443 for HTTP/3) are open, and
-   that nothing else on the server is already using ports 80/443.
+2. Make sure inbound TCP 80 and 443 are open, and that the
+   [webserver](https://github.com/gmiszori/webserver) proxy is running with
+   `AMOEBA_DOMAIN` set to your domain.
 3. On the server:
    ```bash
    git clone https://github.com/gmiszori/amoeba && cd amoeba
@@ -83,7 +93,7 @@ address, and they'd all share one per-IP connection limit.
 
 | Variable | Default | |
 |----------|---------|--|
-| `DOMAIN` | `localhost` | Domain Caddy serves and gets a certificate for. |
+| `DOMAIN` | `localhost` | Domain Caddy serves and gets a certificate for. Must match `AMOEBA_DOMAIN` in the webserver proxy. |
 | `TURN_SECONDS` | `30` | Seconds per move. |
 | `ALLOWED_ORIGINS` | – | Extra WebSocket origins, only needed if the page is served from a different host. |
 | `HTTP_BIND` / `HTTP_PORT` | `127.0.0.1` / `8080` | Dev stack only: where its Caddy is published. |
@@ -102,8 +112,11 @@ What's in place:
   the game.
 - HTTPS everywhere: Caddy redirects HTTP to HTTPS and manages certificates.
 - Every container runs as a non-root user with a read-only filesystem, no
-  Linux capabilities and memory/process caps. Only Caddy is published; the
-  game server is reachable only through it.
+  Linux capabilities and memory/process caps. Nothing is published on the
+  host. Caddy is reachable only through the webserver proxy, and the game
+  server only through Caddy.
+- Caddy trusts the client address in a PROXY header only from the proxy's
+  fixed address (`172.31.250.2`), so other containers can't fake one.
 
 When deploying:
 

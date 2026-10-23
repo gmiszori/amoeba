@@ -3,6 +3,19 @@
 	# Caddy runs unprivileged and can't add its local CA to the system trust
 	# store; only relevant for DOMAIN=localhost.
 	skip_install_trust
+	servers {
+		# Only the webserver proxy reaches this Caddy. It passes TLS through
+		# and prepends a PROXY header with the player's address, trusted from
+		# the proxy's fixed address alone, so per-IP limits see real players.
+		listener_wrappers {
+			proxy_protocol {
+				allow 172.31.250.2/32
+			}
+			tls
+		}
+		# The proxy forwards TCP only; don't advertise HTTP/3 over UDP.
+		protocols h1 h2
+	}
 }
 
 # DOMAIN comes from .env. For a real domain Caddy gets and renews a Let's
@@ -33,4 +46,10 @@
 		header /_astro/* Cache-Control "public, max-age=31536000, immutable"
 		file_server
 	}
+}
+
+# The HTTP->HTTPS redirect, spelled out: Caddy's automatic redirect server
+# doesn't get the PROXY-protocol listener above and would reject every request.
+http:// {
+	redir https://{host}{uri} 308
 }
