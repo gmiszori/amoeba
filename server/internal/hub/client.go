@@ -4,7 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"log/slog"
+	"net"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/coder/websocket"
@@ -18,6 +20,11 @@ const (
 	writeTimeout = 10 * time.Second
 	readLimit    = 1024
 	sendBuffer   = 64
+
+	// A person sends maybe one message a second; this leaves plenty of room
+	// while stopping floods.
+	msgRate  = 10 // per second, sustained
+	msgBurst = 20
 )
 
 // client is one WebSocket connection. It reads messages and hands them to the
@@ -32,6 +39,13 @@ type client struct {
 
 // ServeHTTP upgrades the request to a WebSocket and serves it until it closes.
 func (h *Hub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	ip := clientIP(r)
+	if !h.acquireConn(ip) {
+		http.Error(w, "too many connections", http.StatusTooManyRequests)
+		return
+	}
+	defer h.releaseConn(ip)
+
 	conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{OriginPatterns: h.cfg.OriginPatterns})
 	if err != nil {
 		return // Accept has already written the error response
@@ -47,9 +61,14 @@ func (h *Hub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}()
 	go c.writeLoop(ctx)
 
+	limit := limiter{tokens: msgBurst, last: time.Now()}
 	for {
 		_, data, err := conn.Read(ctx)
 		if err != nil {
+			return
+		}
+		if !limit.allow(time.Now()) {
+			conn.Close(websocket.StatusPolicyViolation, "too many messages")
 			return
 		}
 		var msg protocol.Inbound
@@ -108,4 +127,41 @@ func (c *client) sendError(msg string) {
 // be written.
 func (c *client) closeSoon() {
 	time.AfterFunc(time.Second, c.cancel)
+}
+
+// limiter is a token bucket allowing msgRate messages per second on average
+// with bursts of up to msgBurst.
+type limiter struct {
+	tokens float64
+	last   time.Time
+}
+
+func (l *limiter) allow(now time.Time) bool {
+	l.tokens = min(msgBurst, l.tokens+now.Sub(l.last).Seconds()*msgRate)
+	l.last = now
+	if l.tokens < 1 {
+		return false
+	}
+	l.tokens--
+	return true
+}
+
+// clientIP returns the address of the player's device. Requests arrive through
+// Cloudflare (which sets CF-Connecting-IP) and Caddy (which sets
+// X-Forwarded-For); the server itself is never exposed directly. These headers
+// can only be trusted while Caddy isn't publicly reachable except through the
+// tunnel, which is the default (HTTP_BIND=127.0.0.1).
+func clientIP(r *http.Request) string {
+	if ip := r.Header.Get("CF-Connecting-IP"); ip != "" {
+		return ip
+	}
+	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+		first, _, _ := strings.Cut(xff, ",")
+		return strings.TrimSpace(first)
+	}
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		return r.RemoteAddr
+	}
+	return host
 }

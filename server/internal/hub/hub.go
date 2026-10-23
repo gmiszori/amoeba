@@ -4,6 +4,7 @@
 package hub
 
 import (
+	"cmp"
 	"context"
 	"crypto/rand"
 	"encoding/hex"
@@ -30,14 +31,22 @@ type Config struct {
 	// OriginPatterns lists extra allowed WebSocket origins (host patterns).
 	// Same-host origins are always allowed.
 	OriginPatterns []string
+
+	// Abuse limits; zero means the default. Per-IP is generous because a whole
+	// lecture hall can share one NAT address.
+	MaxConns      int // default 5000
+	MaxConnsPerIP int // default 50
+	MaxSessions   int // default 20000
 }
 
 type Hub struct {
 	cfg Config
 
-	mu       sync.Mutex
-	sessions map[string]*session // by token
-	queue    []*session
+	mu        sync.Mutex
+	sessions  map[string]*session // by token
+	queue     []*session
+	conns     int
+	connsByIP map[string]int
 }
 
 // session is a player identity that survives reconnects. The client keeps its
@@ -77,7 +86,10 @@ func seatMark(seat int) game.Mark {
 }
 
 func New(cfg Config) *Hub {
-	return &Hub{cfg: cfg, sessions: make(map[string]*session)}
+	cfg.MaxConns = cmp.Or(cfg.MaxConns, 5000)
+	cfg.MaxConnsPerIP = cmp.Or(cfg.MaxConnsPerIP, 50)
+	cfg.MaxSessions = cmp.Or(cfg.MaxSessions, 20000)
+	return &Hub{cfg: cfg, sessions: make(map[string]*session), connsByIP: make(map[string]int)}
 }
 
 // Run periodically forgets sessions that have been gone for a while. It
@@ -150,6 +162,11 @@ func (h *Hub) hello(c *client, token string) {
 	}
 	s := h.sessions[token]
 	if s == nil {
+		if len(h.sessions) >= h.cfg.MaxSessions {
+			c.sendError("the server is full, please try again later")
+			c.closeSoon()
+			return
+		}
 		s = &session{token: newID()}
 		h.sessions[s.token] = s
 	}
@@ -168,6 +185,27 @@ func (h *Hub) hello(c *client, token string) {
 		return
 	}
 	h.sendStatus(s)
+}
+
+// acquireConn reserves a connection slot for ip, or reports that a limit is hit.
+func (h *Hub) acquireConn(ip string) bool {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if h.conns >= h.cfg.MaxConns || h.connsByIP[ip] >= h.cfg.MaxConnsPerIP {
+		return false
+	}
+	h.conns++
+	h.connsByIP[ip]++
+	return true
+}
+
+func (h *Hub) releaseConn(ip string) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.conns--
+	if h.connsByIP[ip]--; h.connsByIP[ip] <= 0 {
+		delete(h.connsByIP, ip)
+	}
 }
 
 func (h *Hub) disconnect(c *client) {

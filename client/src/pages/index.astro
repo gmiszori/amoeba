@@ -1,4 +1,5 @@
 ---
+import Mark from "../components/Mark.astro";
 import "../styles/global.css";
 ---
 
@@ -21,7 +22,7 @@ import "../styles/global.css";
   <body>
     <section id="screen-lobby" class="screen centered">
       <div class="card">
-        <div class="logo" aria-hidden="true"><span class="x">✕</span><span class="o">◯</span></div>
+        <div class="logo" aria-hidden="true"><Mark kind="X" /><Mark kind="O" /></div>
         <h1>amőba</h1>
         <p class="tagline">Five in a row on an endless board.</p>
         <form id="join-form" novalidate>
@@ -47,7 +48,7 @@ import "../styles/global.css";
 
     <section id="screen-queue" class="screen centered" hidden>
       <div class="card">
-        <div class="spinner" aria-hidden="true"><span class="x">✕</span><span class="o">◯</span></div>
+        <div class="spinner" aria-hidden="true"><Mark kind="X" /><Mark kind="O" /></div>
         <h2>Looking for an opponent…</h2>
         <p class="muted">Send the link to a friend to play together.</p>
         <button id="cancel" type="button">Cancel</button>
@@ -59,7 +60,7 @@ import "../styles/global.css";
 
       <header class="hud">
         <div class="player" id="player-x" data-mark="X">
-          <span class="mark x" aria-hidden="true">✕</span>
+          <Mark kind="X" class="mark" />
           <span class="who"><span class="pname"></span><span class="tag"></span></span>
         </div>
         <div class="clock" id="clock">
@@ -68,7 +69,7 @@ import "../styles/global.css";
         </div>
         <div class="player" id="player-o" data-mark="O">
           <span class="who"><span class="pname"></span><span class="tag"></span></span>
-          <span class="mark o" aria-hidden="true">◯</span>
+          <Mark kind="O" class="mark" />
         </div>
       </header>
 

@@ -57,7 +57,7 @@ docker build --target test server
 1. In Cloudflare Zero Trust → Networks → Tunnels, create a tunnel and copy
    its token.
 2. Add a public hostname for the tunnel (e.g. `amoeba.example.com`) with
-   service `http://web:80`.
+   service `http://web:8080`.
 3. On the VPS:
    ```bash
    git clone https://github.com/gmiszori/amoeba && cd amoeba
@@ -79,3 +79,28 @@ games (state is in memory).
 | `COMPOSE_PROFILES` | – | `tunnel` starts cloudflared. |
 | `CLOUDFLARE_TUNNEL_TOKEN` | – | Tunnel token. |
 | `ALLOWED_ORIGINS` | – | Extra WebSocket origins, only needed if the page is served from a different host. |
+
+## Security
+
+What's in place:
+
+- The server decides every move, the clock and the winner; clients can't cheat
+  by editing the page. Session tokens are 128-bit random values.
+- WebSockets only accept the site's own origin, messages are capped at 1 KB
+  and 10/s per connection, and connections (50 per IP, 5000 total), sessions
+  and moves per game are limited.
+- Caddy sends a strict Content-Security-Policy (only the site's own scripts,
+  styles and WebSocket), HSTS, and headers that stop other sites from framing
+  the game.
+- Every container runs as a non-root user with a read-only filesystem, no
+  Linux capabilities and memory/process caps. Only Caddy is published, on
+  `127.0.0.1`.
+
+When deploying:
+
+- Keep `HTTP_BIND=127.0.0.1`, so the only way in is the tunnel. The server
+  trusts the `CF-Connecting-IP` header for its per-IP limit.
+- In Cloudflare, consider a rate-limiting rule on `/ws` and "Always Use HTTPS".
+- Never commit `.env`; it holds the tunnel token.
+- Rebuild now and then (`docker compose build --pull`) to pick up base-image
+  security fixes.

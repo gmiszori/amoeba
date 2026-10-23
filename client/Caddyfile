@@ -4,17 +4,25 @@
 	admin off
 }
 
-:80 {
+# Unprivileged port: the container runs as a non-root user with no capabilities.
+:8080 {
 	encode zstd gzip
 
 	header {
+		# Only our own scripts, styles and WebSocket; no framing by other sites.
+		Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self' ws://{http.request.hostport} wss://{http.request.hostport}; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
+		# Browsers ignore this over plain HTTP, so it's harmless locally.
+		Strict-Transport-Security "max-age=31536000"
 		X-Content-Type-Options nosniff
+		X-Frame-Options DENY
 		Referrer-Policy no-referrer
+		Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=(), usb=()"
+		Cross-Origin-Opener-Policy same-origin
 		-Server
 	}
 
 	handle /ws {
-		reverse_proxy {$SERVER_UPSTREAM:server:8080}
+		reverse_proxy server:8080
 	}
 
 	handle {

@@ -8,6 +8,10 @@ import "errors"
 // WinLength is the number of marks in a row needed to win. Longer runs win too.
 const WinLength = 5
 
+// MaxMoves caps the size of a game so it can't grow without bound. Real games
+// end long before this.
+const MaxMoves = 2000
+
 // Mark is the content of a cell.
 type Mark uint8
 
@@ -54,6 +58,7 @@ var (
 	ErrGameOver    = errors.New("the game is over")
 	ErrNotYourTurn = errors.New("it is not your turn")
 	ErrOccupied    = errors.New("that cell is already taken")
+	ErrBoardFull   = errors.New("the move limit for this game has been reached")
 )
 
 // Game is a single match. The board is stored sparsely, so its size only
@@ -95,6 +100,9 @@ func (g *Game) Play(m Mark, p Point) error {
 	}
 	if g.cells[p] != None {
 		return ErrOccupied
+	}
+	if len(g.moves) >= MaxMoves {
+		return ErrBoardFull
 	}
 	g.cells[p] = m
 	g.moves = append(g.moves, p)

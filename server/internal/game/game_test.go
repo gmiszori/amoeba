@@ -107,3 +107,17 @@ func TestRuleErrors(t *testing.T) {
 		t.Fatal("second forfeit changed the winner")
 	}
 }
+
+func TestMoveLimit(t *testing.T) {
+	g := New()
+	for i := range MaxMoves {
+		// Spread out so nobody ever gets five in a row.
+		p := Point{(i / 2) * 2, (i % 2) * 50}
+		if err := g.Play(g.Turn(), p); err != nil {
+			t.Fatalf("move %d: %v", i, err)
+		}
+	}
+	if err := g.Play(g.Turn(), Point{-1, -1}); !errors.Is(err, ErrBoardFull) {
+		t.Fatalf("move past the limit: got %v", err)
+	}
+}

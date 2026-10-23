@@ -233,3 +233,58 @@ func TestBadNameIsRejectedWithCode(t *testing.T) {
 		t.Fatalf("error code %q, want name", e.Code)
 	}
 }
+
+func TestMessageFloodDisconnects(t *testing.T) {
+	c := dial(t, startServer(t, time.Minute))
+	c.hello("")
+	for range 3 * msgBurst {
+		c.send(protocol.Inbound{Type: "cancel"})
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	for {
+		if _, _, err := c.conn.Read(ctx); err != nil {
+			if websocket.CloseStatus(err) != websocket.StatusPolicyViolation {
+				t.Fatalf("connection ended with %v, want policy violation", err)
+			}
+			return
+		}
+	}
+}
+
+func TestConnectionLimitPerIP(t *testing.T) {
+	srv := httptest.NewServer(New(Config{TurnTime: time.Minute, MaxConnsPerIP: 2}))
+	t.Cleanup(srv.Close)
+	url := "ws" + strings.TrimPrefix(srv.URL, "http")
+	dial(t, url)
+	dial(t, url)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	if conn, resp, err := websocket.Dial(ctx, url, nil); err == nil {
+		conn.CloseNow()
+		t.Fatal("third connection from the same IP was accepted")
+	} else if resp == nil || resp.StatusCode != 429 {
+		t.Fatalf("third connection: %v, want HTTP 429", err)
+	}
+}
+
+func TestSessionLimit(t *testing.T) {
+	srv := httptest.NewServer(New(Config{TurnTime: time.Minute, MaxSessions: 1}))
+	t.Cleanup(srv.Close)
+	url := "ws" + strings.TrimPrefix(srv.URL, "http")
+	dial(t, url).hello("")
+	c := dial(t, url)
+	c.send(protocol.Inbound{Type: "hello"})
+	if e := c.expect("error", nil); !strings.Contains(e.Message, "full") {
+		t.Fatalf("unexpected error %q", e.Message)
+	}
+}
+
+func TestZalgoNameRejected(t *testing.T) {
+	if _, err := NormalizeName("á̂̃b"); err == nil {
+		t.Fatal("name with three stacked combining marks was accepted")
+	}
+	if _, err := NormalizeName("Gergő"); err != nil { // decomposed ő
+		t.Fatalf("decomposed accent rejected: %v", err)
+	}
+}

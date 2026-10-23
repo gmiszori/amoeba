@@ -22,9 +22,19 @@ func NormalizeName(raw string) (string, error) {
 	if n := utf8.RuneCountInString(name); n == 0 || n > MaxNameLength {
 		return "", ErrInvalidName
 	}
+	marks := 0
 	for _, r := range name {
 		if !unicode.IsLetter(r) && !unicode.IsMark(r) && !unicode.IsDigit(r) && !strings.ContainsRune(" _-.", r) {
 			return "", ErrInvalidName
+		}
+		// Real accents need at most two combining marks per letter; long
+		// stacks ("Zalgo" text) spill over the rest of the page.
+		if unicode.IsMark(r) {
+			if marks++; marks > 2 {
+				return "", ErrInvalidName
+			}
+		} else {
+			marks = 0
 		}
 	}
 	if isOffensive(name) {

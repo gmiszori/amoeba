@@ -1,0 +1,21 @@
+---
+// An X or O drawn with the same proportions as the board's canvas marks, so
+// both glyphs come out the same size (font glyphs like ✕ and ◯ don't).
+interface Props {
+  kind: "X" | "O";
+  class?: string;
+}
+const { kind, class: className = "" } = Astro.props;
+---
+
+<svg
+  class:list={["mark-icon", kind === "X" ? "x" : "o", className]}
+  viewBox="0 0 100 100"
+  aria-hidden="true"
+  fill="none"
+  stroke="currentColor"
+  stroke-width="12"
+  stroke-linecap="round"
+>
+  {kind === "X" ? <path d="M22 22L78 78M78 22L22 78" /> : <circle cx="50" cy="50" r="30" />}
+</svg>

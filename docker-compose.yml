@@ -2,10 +2,20 @@
 # On the VPS, set COMPOSE_PROFILES=tunnel in .env to also start cloudflared.
 name: amoeba
 
+# Every container: read-only filesystem, no Linux capabilities, no privilege
+# escalation, and memory/process caps so one can't starve the VPS.
+x-hardening: &hardening
+  read_only: true
+  cap_drop: [ALL]
+  security_opt: ["no-new-privileges:true"]
+  pids_limit: 256
+  restart: unless-stopped
+
 services:
   server:
+    <<: *hardening
     build: ./server
-    restart: unless-stopped
+    mem_limit: 256m
     environment:
       TURN_SECONDS: ${TURN_SECONDS:-30}
       ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-}
@@ -16,20 +26,25 @@ services:
       start_period: 5s
 
   web:
+    <<: *hardening
     build: ./client
-    restart: unless-stopped
+    mem_limit: 128m
+    tmpfs:
+      - /tmp
     depends_on:
       server:
         condition: service_healthy
     ports:
       # Bound to localhost by default: on the VPS traffic arrives via the
-      # tunnel, so nothing needs to be exposed publicly.
-      - "${HTTP_BIND:-127.0.0.1}:${HTTP_PORT:-8080}:80"
+      # tunnel, so nothing needs to be exposed publicly. Keep it that way: the
+      # server trusts the client-IP headers Caddy and Cloudflare set.
+      - "${HTTP_BIND:-127.0.0.1}:${HTTP_PORT:-8080}:8080"
 
   cloudflared:
-    image: cloudflare/cloudflared:2025.9.1
+    <<: *hardening
+    image: cloudflare/cloudflared:2026.10.0
     profiles: ["tunnel"]
-    restart: unless-stopped
+    mem_limit: 128m
     command: tunnel --no-autoupdate run
     environment:
       TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN:-}
