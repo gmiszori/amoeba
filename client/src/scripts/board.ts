@@ -3,6 +3,17 @@ import type { Cell, Mark } from "./protocol";
 const MIN_SCALE = 12; // CSS px per cell
 const MAX_SCALE = 120;
 
+// Mark geometry, as fractions of a cell.
+const MARK_WIDTH = 0.11; // stroke of a placed mark
+const GHOST_WIDTH = 0.085; // stroke of the dashed preview mark
+const X_PAD = 0.24; // inset of the X's arms from the cell edge
+const O_RADIUS = 0.29;
+// Preview dashes: how many, and how long each is relative to the gaps.
+const X_DASHES = 4; // per arm; even, so the crossing falls in a gap
+const X_DASH_TO_GAP = 2.2;
+const O_DASHES = 8;
+const O_DASH_TO_GAP = 1.5;
+
 interface Theme {
   bg: string;
   grid: string;
@@ -316,12 +327,12 @@ export class BoardView {
     this.moves.forEach((cell, i) => {
       if (!visible(cell)) return;
       const mark: Mark = i % 2 === 0 ? "X" : "O";
-      this.drawMark(cell, mark, theme[mark], false);
+      this.drawMark(cell, mark, theme[mark]);
     });
 
     if (this.preview && visible(this.preview.cell)) {
       const color = this.preview.mark === "X" ? theme.previewX : theme.previewO;
-      this.drawMark(this.preview.cell, this.preview.mark, color, true);
+      this.drawGhost(this.preview.cell, this.preview.mark, color);
     }
 
     if (this.line && this.winner) {
@@ -343,31 +354,75 @@ export class BoardView {
     }
   }
 
-  private drawMark([x, y]: Cell, mark: Mark, color: string, dashed: boolean): void {
+  private drawMark([x, y]: Cell, mark: Mark, color: string): void {
     const { ctx, scale: s } = this;
     const left = this.sx(x);
     const top = this.sy(y);
     ctx.save();
     ctx.strokeStyle = color;
-    if (dashed) {
-      // Thinner strokes with square ends: round caps would grow every dash by
-      // half the line width on each side and close the gaps.
-      ctx.lineWidth = Math.max(1.5, s * 0.07);
-      ctx.lineCap = "butt";
-      ctx.setLineDash([s * 0.08, s * 0.07]);
-    } else {
-      ctx.lineWidth = Math.max(2, s * 0.11);
-      ctx.lineCap = "round";
-    }
+    ctx.lineWidth = Math.max(2, s * MARK_WIDTH);
+    ctx.lineCap = "round";
     ctx.beginPath();
     if (mark === "X") {
-      const pad = s * 0.24;
+      const pad = s * X_PAD;
       ctx.moveTo(left + pad, top + pad);
       ctx.lineTo(left + s - pad, top + s - pad);
       ctx.moveTo(left + s - pad, top + pad);
       ctx.lineTo(left + pad, top + s - pad);
     } else {
-      ctx.arc(left + s / 2, top + s / 2, s * 0.29, 0, Math.PI * 2);
+      ctx.arc(left + s / 2, top + s / 2, s * O_RADIUS, 0, Math.PI * 2);
+    }
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  /**
+   * Draws the tentative mark shown after the first tap: the same shape as a
+   * placed mark but thinner, dashed and slightly see-through. The dashes are
+   * laid out by hand rather than with setLineDash, so every zoom level gets
+   * the same evenly spaced, symmetric pattern.
+   */
+  private drawGhost([x, y]: Cell, mark: Mark, color: string): void {
+    const { ctx, scale: s } = this;
+    const left = this.sx(x);
+    const top = this.sy(y);
+    const width = Math.max(1.5, s * GHOST_WIDTH);
+    ctx.save();
+    ctx.strokeStyle = color;
+    ctx.globalAlpha = 0.85;
+    ctx.lineWidth = width;
+    ctx.lineCap = "round";
+    ctx.beginPath();
+    if (mark === "X") {
+      // Span exactly what a placed X covers, round caps included.
+      const start = s * X_PAD - (s * MARK_WIDTH) / 2;
+      const length = (s - 2 * start) * Math.SQRT2;
+      const dashes = X_DASHES;
+      const gap = length / (dashes * X_DASH_TO_GAP + dashes - 1);
+      const dash = gap * X_DASH_TO_GAP;
+      for (const [x0, y0, dx, dy] of [
+        [left + start, top + start, 1, 1],
+        [left + s - start, top + start, -1, 1],
+      ]) {
+        for (let i = 0; i < dashes; i++) {
+          // Round caps add width/2 at each end, so the stroked segment is shorter.
+          const a = (i * (dash + gap) + width / 2) / Math.SQRT2;
+          const b = (i * (dash + gap) + dash - width / 2) / Math.SQRT2;
+          ctx.moveTo(x0 + a * dx, y0 + a * dy);
+          ctx.lineTo(x0 + b * dx, y0 + b * dy);
+        }
+      }
+    } else {
+      const cx = left + s / 2;
+      const cy = top + s / 2;
+      const r = s * O_RADIUS;
+      const step = (Math.PI * 2) / O_DASHES;
+      const half = (step * (O_DASH_TO_GAP / (O_DASH_TO_GAP + 1)) - width / r) / 2;
+      for (let i = 0; i < O_DASHES; i++) {
+        const mid = -Math.PI / 2 + i * step;
+        ctx.moveTo(cx + r * Math.cos(mid - half), cy + r * Math.sin(mid - half));
+        ctx.arc(cx, cy, r, mid - half, mid + half);
+      }
     }
     ctx.stroke();
     ctx.restore();
