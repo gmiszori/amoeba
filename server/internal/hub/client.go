@@ -15,7 +15,7 @@ import (
 )
 
 const (
-	// pingInterval stays well below Cloudflare's ~100s idle timeout.
+	// pingInterval keeps idle connections from being dropped by proxies and NATs.
 	pingInterval = 25 * time.Second
 	writeTimeout = 10 * time.Second
 	readLimit    = 1024
@@ -146,15 +146,10 @@ func (l *limiter) allow(now time.Time) bool {
 	return true
 }
 
-// clientIP returns the address of the player's device. Requests arrive through
-// Cloudflare (which sets CF-Connecting-IP) and Caddy (which sets
-// X-Forwarded-For); the server itself is never exposed directly. These headers
-// can only be trusted while Caddy isn't publicly reachable except through the
-// tunnel, which is the default (HTTP_BIND=127.0.0.1).
+// clientIP returns the address of the player's device. The server is only
+// reachable through Caddy, which ignores any X-Forwarded-For a client sends
+// and sets it to the real peer address, so its first entry can be trusted.
 func clientIP(r *http.Request) string {
-	if ip := r.Header.Get("CF-Connecting-IP"); ip != "" {
-		return ip
-	}
 	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
 		first, _, _ := strings.Cut(xff, ",")
 		return strings.TrimSpace(first)

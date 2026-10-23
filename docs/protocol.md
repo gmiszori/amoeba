@@ -69,4 +69,4 @@ decides the winner. Clients only send intentions.
 - A player in the queue who disconnects is removed from it (the client rejoins
   automatically on reconnect).
 - The server pings every 25 s to keep idle connections alive through
-  Cloudflare.
+  proxies and mobile NATs.

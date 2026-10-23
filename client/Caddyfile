@@ -1,11 +1,14 @@
 {
-	# TLS is terminated by Cloudflare; Caddy only speaks plain HTTP inside Docker.
-	auto_https off
 	admin off
+	# Caddy runs unprivileged and can't add its local CA to the system trust
+	# store; only relevant for DOMAIN=localhost.
+	skip_install_trust
 }
 
-# Unprivileged port: the container runs as a non-root user with no capabilities.
-:8080 {
+# DOMAIN comes from .env. For a real domain Caddy gets and renews a Let's
+# Encrypt certificate automatically and redirects HTTP to HTTPS. "localhost"
+# gets a self-signed certificate; "http://localhost" serves plain HTTP.
+{$DOMAIN:localhost} {
 	encode zstd gzip
 
 	header {
