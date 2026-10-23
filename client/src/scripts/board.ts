@@ -349,9 +349,16 @@ export class BoardView {
     const top = this.sy(y);
     ctx.save();
     ctx.strokeStyle = color;
-    ctx.lineWidth = Math.max(2, s * 0.11);
-    ctx.lineCap = "round";
-    if (dashed) ctx.setLineDash([s * 0.12, s * 0.09]);
+    if (dashed) {
+      // Thinner strokes with square ends: round caps would grow every dash by
+      // half the line width on each side and close the gaps.
+      ctx.lineWidth = Math.max(1.5, s * 0.07);
+      ctx.lineCap = "butt";
+      ctx.setLineDash([s * 0.08, s * 0.07]);
+    } else {
+      ctx.lineWidth = Math.max(2, s * 0.11);
+      ctx.lineCap = "round";
+    }
     ctx.beginPath();
     if (mark === "X") {
       const pad = s * 0.24;
