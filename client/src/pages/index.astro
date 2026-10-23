@@ -43,6 +43,9 @@ import "../styles/global.css";
           <p id="name-error" class="field-error" role="alert"></p>
           <button id="join" type="submit" class="primary">Enter matchmaking</button>
         </form>
+        <div class="divider"><span>or</span></div>
+        <button id="local" type="button">Play on this device</button>
+        <p class="in-game" hidden><span class="live-dot" aria-hidden="true"></span>In game: <strong class="in-game-count">0</strong></p>
       </div>
     </section>
 
@@ -52,6 +55,7 @@ import "../styles/global.css";
         <h2>Looking for an opponent…</h2>
         <p class="muted">Send the link to a friend to play together.</p>
         <button id="cancel" type="button">Cancel</button>
+        <p class="in-game" hidden><span class="live-dot" aria-hidden="true"></span>In game: <strong class="in-game-count">0</strong></p>
       </div>
     </section>
 
@@ -88,6 +92,7 @@ import "../styles/global.css";
       <div id="result" class="sheet" hidden>
         <h2 id="result-title"></h2>
         <p id="result-detail" class="muted"></p>
+        <p id="result-note" class="result-note" role="status" hidden></p>
         <div class="sheet-actions">
           <button id="rematch" type="button" class="primary">Rematch</button>
           <button id="back" type="button">Back to matchmaking</button>

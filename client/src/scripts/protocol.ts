@@ -27,6 +27,7 @@ export type ServerMessage =
   | { type: "lobby" }
   | { type: "queued" }
   | { type: "kicked" }
+  | { type: "stats"; inGame: number }
   | { type: "error"; code?: "name"; message: string }
   | GameState;
 

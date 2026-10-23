@@ -1,5 +1,6 @@
 import { BoardView } from "./board";
 import { Connection } from "./connection";
+import { LocalGame } from "./local";
 import { normalizeName, type Cell, type GameState, type ServerMessage } from "./protocol";
 
 const TOKEN_KEY = "amoeba.token";
@@ -36,6 +37,9 @@ const ui = {
   nameError: $("name-error"),
   join: $<HTMLButtonElement>("join"),
   cancel: $<HTMLButtonElement>("cancel"),
+  local: $<HTMLButtonElement>("local"),
+  inGame: document.querySelectorAll<HTMLElement>(".in-game"),
+  inGameCount: document.querySelectorAll<HTMLElement>(".in-game-count"),
   playerX: $("player-x"),
   playerO: $("player-o"),
   clock: $("clock"),
@@ -47,6 +51,7 @@ const ui = {
   result: $("result"),
   resultTitle: $("result-title"),
   resultDetail: $("result-detail"),
+  resultNote: $("result-note"),
   rematch: $<HTMLButtonElement>("rematch"),
   back: $<HTMLButtonElement>("back"),
   banner: $("banner"),
@@ -65,6 +70,9 @@ let preview: Cell | null = null;
 // True while the player wants to be in the queue, so a reconnect that lands
 // in the lobby (the server drops queued players on disconnect) rejoins.
 let wantQueue = false;
+// The same-device game in progress, if any. It reuses the game screen but
+// never talks to the server.
+let local: LocalGame | null = null;
 
 const key = ([x, y]: Cell) => `${x},${y}`;
 const myTurn = () => !!game && !game.over && game.turn === game.you;
@@ -88,7 +96,7 @@ const conn = new Connection(wsUrl, {
     clearTimeout(disconnectedTimer);
     if (connected) {
       hideBanner();
-    } else {
+    } else if (!local) {
       // Don't flash the banner for blips that reconnect right away.
       disconnectedTimer = window.setTimeout(() => showBanner("Reconnecting…"), 1200);
     }
@@ -102,6 +110,7 @@ function handleMessage(msg: ServerMessage): void {
       store.set(TOKEN_KEY, msg.token);
       break;
     case "lobby":
+      if (local) break; // e.g. a reconnect while playing on this device
       game = null;
       if (wantQueue && joinQueue()) break;
       wantQueue = false;
@@ -129,6 +138,10 @@ function handleMessage(msg: ServerMessage): void {
       } else {
         toast(msg.message);
       }
+      break;
+    case "stats":
+      for (const el of ui.inGameCount) el.textContent = String(msg.inGame);
+      for (const el of ui.inGame) el.hidden = false;
       break;
     case "kicked":
       conn.stop();
@@ -168,6 +181,22 @@ ui.cancel.addEventListener("click", () => {
   show("lobby");
 });
 
+// Works offline too: a local game needs no server.
+ui.local.addEventListener("click", startLocal);
+
+function startLocal(): void {
+  local = new LocalGame();
+  updateGame(local.state());
+}
+
+function endLocal(): void {
+  local = null;
+  game = null;
+  setPreview(null);
+  show("lobby");
+  if (!conn.connected) disconnectedTimer = window.setTimeout(() => showBanner("Reconnecting…"), 1200);
+}
+
 function joinQueue(): boolean {
   const name = normalizeName(ui.name.value);
   if (!name || !conn.send({ type: "join", name })) return false;
@@ -189,7 +218,7 @@ function updateGame(g: GameState): void {
   board.setModel(g.moves, g.line ?? null, g.winner ?? null);
 
   if (preview && (!myTurn() || occupied.has(key(preview)))) setPreview(null);
-  if (turnChanged && myTurn() && !isNew) navigator.vibrate?.(30);
+  if (turnChanged && myTurn() && !isNew && !local) navigator.vibrate?.(30);
 
   renderHud();
 }
@@ -200,6 +229,11 @@ function setPreview(cell: Cell | null): void {
 }
 
 function sendMove(cell: Cell): void {
+  if (local) {
+    setPreview(null);
+    if (local.play(cell)) updateGame(local.state());
+    return;
+  }
   if (conn.send({ type: "move", x: cell[0], y: cell[1] })) setPreview(null);
 }
 
@@ -223,20 +257,37 @@ board.onHover = (cell) => {
 ui.recenter.addEventListener("click", () => board.recenter());
 
 ui.leave.addEventListener("click", () => {
+  if (local) {
+    const inProgress = !!game && !game.over && game.moves.length > 0;
+    if (inProgress && !confirm("Leave this game?")) return;
+    endLocal();
+    return;
+  }
   if (game && !game.over && !confirm("Leave this game? It counts as a loss.")) return;
   wantQueue = false;
   conn.send({ type: "leave" });
 });
 
-ui.rematch.addEventListener("click", () => conn.send({ type: "rematch" }));
+ui.rematch.addEventListener("click", () => {
+  if (local) startLocal();
+  else conn.send({ type: "rematch" });
+});
 
 ui.back.addEventListener("click", () => {
+  if (local) {
+    endLocal();
+    return;
+  }
   wantQueue = true;
   joinQueue();
 });
 
 function renderHud(): void {
   if (!game) return;
+  if (local) {
+    renderLocalHud(game);
+    return;
+  }
   const g = game;
   const opponent = g.opponentName || "Opponent";
 
@@ -256,6 +307,7 @@ function renderHud(): void {
   // visibility (not display) so the HUD grid keeps its three columns.
   ui.clock.style.visibility = g.over ? "hidden" : "visible";
   ui.clock.dataset.turn = g.turn;
+  ui.back.textContent = "Back to matchmaking";
 
   if (g.over) {
     ui.status.textContent = "";
@@ -278,14 +330,53 @@ function renderHud(): void {
     ui.resultTitle.className = g.winner === "X" ? "x" : "o";
     ui.resultDetail.textContent = resultDetail(g, won, opponent);
 
+    // Once the opponent has gone there's no rematch: blur the button and,
+    // if we'd already asked for one, say it's off.
     ui.rematch.disabled = g.opponentLeft || g.rematch.you;
+    ui.rematch.classList.toggle("blurred", g.opponentLeft);
     ui.rematch.textContent = g.opponentLeft
-      ? `${opponent} left`
+      ? "Rematch"
       : g.rematch.you
         ? `Waiting for ${opponent}…`
         : g.rematch.opponent
           ? `${opponent} wants a rematch – accept`
           : "Rematch";
+    ui.resultNote.hidden = !g.opponentLeft;
+    ui.resultNote.textContent = g.rematch.you
+      ? `Rematch cancelled – ${opponent} left.`
+      : `${opponent} left – no rematch.`;
+  }
+}
+
+const markName = (m: "X" | "O") => (m === "X" ? "Blue" : "Red");
+
+function renderLocalHud(g: GameState): void {
+  for (const [el, mark] of [
+    [ui.playerX, "X"],
+    [ui.playerO, "O"],
+  ] as const) {
+    el.querySelector(".pname")!.textContent = markName(mark);
+    el.querySelector(".tag")!.textContent = "";
+    el.classList.toggle("active", !g.over && g.turn === mark);
+  }
+  ui.clock.style.visibility = "hidden"; // no turn timer on a shared device
+
+  ui.status.textContent = g.over
+    ? ""
+    : preview
+      ? "Tap the dashed mark again to place it"
+      : `${markName(g.turn)}'s turn – ${coarsePointer ? "tap" : "click"} a cell`;
+
+  ui.result.hidden = !g.over;
+  if (g.over && g.winner) {
+    ui.resultTitle.textContent = `${markName(g.winner)} wins! 🎉`;
+    ui.resultTitle.className = g.winner === "X" ? "x" : "o";
+    ui.resultDetail.textContent = "Five in a row.";
+    ui.resultNote.hidden = true;
+    ui.rematch.disabled = false;
+    ui.rematch.classList.remove("blurred");
+    ui.rematch.textContent = "Play again";
+    ui.back.textContent = "Back to menu";
   }
 }
 
@@ -304,7 +395,7 @@ function resultDetail(g: GameState, won: boolean, opponent: string): string {
 // Turn clock: the server sends the remaining time with every state; we count
 // down locally between updates.
 function tick(): void {
-  if (game && !game.over) {
+  if (game && !game.over && !local) {
     const remaining = Math.max(0, deadline - performance.now());
     ui.clockText.textContent = String(Math.ceil(remaining / 1000));
     ui.clockBar.style.transform = `scaleX(${remaining / game.turnMs})`;

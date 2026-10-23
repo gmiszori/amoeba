@@ -29,6 +29,7 @@ decides the winner. Clients only send intentions.
 | `game`    | see below | Full state of your current match. Sent whenever it changes. |
 | `error`   | `code?`, `message` | A request was rejected. `code` is `name` when the username was invalid or blocked (see `server/internal/hub/badwords.txt`); the player is back in the lobby. |
 | `kicked`  |        | The same session connected from elsewhere; this connection closes. Don't reconnect automatically. |
+| `stats`   | `inGame` | Number of players in running games. Sent with `lobby`/`queued` and again (at most once a second) whenever it changes, to players not in a game. |
 
 ### `game`
 
@@ -66,6 +67,10 @@ decides the winner. Clients only send intentions.
 - Each turn lasts `TURN_SECONDS` (default 30). Running out of time loses.
 - Disconnecting doesn't pause the clock: a player who drops has until the end
   of their turn to reconnect with their token and carry on.
+- After a game ends, a player who leaves (back to the lobby or matchmaking,
+  or disconnects and doesn't return within 3 s) is gone for good: the
+  opponent gets `opponentLeft: true`, and a rematch is no longer possible.
+  `rematch.you` stays set, so the client can say "rematch cancelled".
 - A player in the queue who disconnects is removed from it (the client rejoins
   automatically on reconnect).
 - The server pings every 25 s to keep idle connections alive through

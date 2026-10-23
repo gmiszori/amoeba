@@ -202,6 +202,43 @@ button.primary {
   margin-top: 8px;
 }
 
+.divider {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 16px 0 8px;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+.divider::before,
+.divider::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--border);
+}
+
+.in-game {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  margin: 18px 0 0;
+  font-size: 0.9rem;
+  color: var(--muted);
+}
+.in-game strong {
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+.live-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #22c55e;
+  box-shadow: 0 0 0 3px rgb(34 197 94 / 0.2);
+}
+
 /* ---- game ---- */
 
 #board {
@@ -388,6 +425,15 @@ button.icon svg {
 }
 .sheet p {
   margin: 0 0 14px;
+}
+.result-note {
+  font-weight: 600;
+  color: var(--o);
+}
+/* No rematch possible any more: the button stays visible but blurred. */
+button.blurred {
+  filter: blur(1.5px);
+  opacity: 0.45;
 }
 .sheet-actions {
   display: grid;

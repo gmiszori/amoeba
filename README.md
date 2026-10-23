@@ -6,6 +6,10 @@ waiting. Blue ✕ always moves first; five or more in a row (horizontal,
 vertical or diagonal) wins. Each turn has a 30 second clock: run out and you
 lose. Built mobile-first so it plays well on phones and iPads.
 
+The home screen shows how many players are in a game right now, and
+"Play on this device" starts a local game for two people sharing one screen
+(no username, no timer, no server involved).
+
 ## Architecture
 
 ```

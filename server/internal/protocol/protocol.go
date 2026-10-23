@@ -28,6 +28,12 @@ type Error struct {
 	Message string `json:"message"`
 }
 
+// Stats is sent to players on the home and matchmaking screens.
+type Stats struct {
+	Type   string `json:"type"`   // stats
+	InGame int    `json:"inGame"` // players currently in a running game
+}
+
 // Cell is an [x, y] coordinate pair.
 type Cell [2]int
 

@@ -1,6 +1,7 @@
 package hub
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"net/http/httptest"
@@ -21,6 +22,7 @@ type message struct {
 	Name    string `json:"name"`
 	Message string `json:"message"`
 	Code    string `json:"code"`
+	InGame  int    `json:"inGame"`
 }
 
 type testClient struct {
@@ -30,8 +32,22 @@ type testClient struct {
 
 func startServer(t *testing.T, turn time.Duration) string {
 	t.Helper()
-	srv := httptest.NewServer(New(Config{TurnTime: turn}))
-	t.Cleanup(srv.Close)
+	return startHub(t, Config{TurnTime: turn})
+}
+
+// startHub runs a hub with fast stats and rematch timers unless cfg sets them.
+func startHub(t *testing.T, cfg Config) string {
+	t.Helper()
+	cfg.StatsInterval = cmp.Or(cfg.StatsInterval, 50*time.Millisecond)
+	cfg.RematchGrace = cmp.Or(cfg.RematchGrace, 100*time.Millisecond)
+	h := New(cfg)
+	ctx, cancel := context.WithCancel(context.Background())
+	go h.Run(ctx)
+	srv := httptest.NewServer(h)
+	t.Cleanup(func() {
+		srv.Close()
+		cancel()
+	})
 	return "ws" + strings.TrimPrefix(srv.URL, "http")
 }
 
@@ -287,4 +303,50 @@ func TestZalgoNameRejected(t *testing.T) {
 	if _, err := NormalizeName("Gergő"); err != nil { // decomposed ő
 		t.Fatalf("decomposed accent rejected: %v", err)
 	}
+}
+
+func TestInGameCount(t *testing.T) {
+	url := startServer(t, time.Minute)
+	watcher := dial(t, url)
+	watcher.hello("")
+	if st := watcher.expect("stats", nil); st.InGame != 0 {
+		t.Fatalf("initial in-game count %d, want 0", st.InGame)
+	}
+	x, _, _, _ := matchPair(t, url)
+	watcher.expect("stats", func(m message) bool { return m.InGame == 2 })
+	x.send(protocol.Inbound{Type: "leave"}) // resigns; the game is over
+	watcher.expect("stats", func(m message) bool { return m.InGame == 0 })
+}
+
+func TestRematchCancelledWhenOpponentLeavesSite(t *testing.T) {
+	x, o, _, _ := matchPair(t, startServer(t, 150*time.Millisecond))
+	o.expect("game", func(m message) bool { return m.Over })
+	o.send(protocol.Inbound{Type: "rematch"})
+	o.expect("game", func(m message) bool { return m.Rematch.You })
+
+	x.conn.Close(websocket.StatusNormalClosure, "") // closes the page
+	g := o.expect("game", func(m message) bool { return m.OpponentLeft })
+	if !g.Rematch.You {
+		t.Fatal("lost track of our own rematch request")
+	}
+	o.send(protocol.Inbound{Type: "rematch"})
+	o.expect("error", nil)
+}
+
+func TestBriefDropKeepsRematch(t *testing.T) {
+	url := startHub(t, Config{TurnTime: 150 * time.Millisecond, RematchGrace: time.Second})
+	x, o, xToken, _ := matchPair(t, url)
+	first := o.expect("game", func(m message) bool { return m.Over })
+
+	x.conn.Close(websocket.StatusNormalClosure, "")
+	o.expect("game", func(m message) bool { return !m.OpponentConnected })
+	x2 := dial(t, url)
+	x2.hello(xToken)
+	x2.expect("game", func(m message) bool { return m.ID == first.ID })
+	time.Sleep(1200 * time.Millisecond) // past the grace period
+
+	x2.send(protocol.Inbound{Type: "rematch"})
+	o.expect("game", func(m message) bool { return m.Rematch.Opponent && !m.OpponentLeft })
+	o.send(protocol.Inbound{Type: "rematch"})
+	o.expect("game", func(m message) bool { return m.ID != first.ID })
 }

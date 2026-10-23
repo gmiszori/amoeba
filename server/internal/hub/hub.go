@@ -37,6 +37,13 @@ type Config struct {
 	MaxConns      int // default 5000
 	MaxConnsPerIP int // default 50
 	MaxSessions   int // default 20000
+
+	// RematchGrace is how long a player who drops off after a game has to come
+	// back before the opponent is told no rematch is coming. Default 3s, so a
+	// phone's brief connection blip doesn't count as leaving.
+	RematchGrace time.Duration
+	// StatsInterval is how often the in-game count is refreshed. Default 1s.
+	StatsInterval time.Duration
 }
 
 type Hub struct {
@@ -47,6 +54,7 @@ type Hub struct {
 	queue     []*session
 	conns     int
 	connsByIP map[string]int
+	inGame    int // players in running matches, as last broadcast
 }
 
 // session is a player identity that survives reconnects. The client keeps its
@@ -89,22 +97,55 @@ func New(cfg Config) *Hub {
 	cfg.MaxConns = cmp.Or(cfg.MaxConns, 5000)
 	cfg.MaxConnsPerIP = cmp.Or(cfg.MaxConnsPerIP, 50)
 	cfg.MaxSessions = cmp.Or(cfg.MaxSessions, 20000)
+	cfg.RematchGrace = cmp.Or(cfg.RematchGrace, 3*time.Second)
+	cfg.StatsInterval = cmp.Or(cfg.StatsInterval, time.Second)
 	return &Hub{cfg: cfg, sessions: make(map[string]*session), connsByIP: make(map[string]int)}
 }
 
-// Run periodically forgets sessions that have been gone for a while. It
-// returns when ctx is done.
+// Run periodically refreshes the in-game count and forgets sessions that have
+// been gone for a while. It returns when ctx is done.
 func (h *Hub) Run(ctx context.Context) {
-	t := time.NewTicker(sweepInterval)
-	defer t.Stop()
+	sweep := time.NewTicker(sweepInterval)
+	defer sweep.Stop()
+	stats := time.NewTicker(h.cfg.StatsInterval)
+	defer stats.Stop()
 	for {
 		select {
 		case <-ctx.Done():
 			return
-		case now := <-t.C:
+		case now := <-sweep.C:
 			h.sweep(now)
+		case <-stats.C:
+			h.refreshStats()
 		}
 	}
+}
+
+// refreshStats recounts the players in running matches and, when the number
+// changed, tells everyone on the home or matchmaking screen. Counting on a
+// timer rather than on every change batches bursts into one update.
+func (h *Hub) refreshStats() {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	n := 0
+	for _, s := range h.sessions {
+		if s.match != nil && !s.match.game.Over() {
+			n++
+		}
+	}
+	if n == h.inGame {
+		return
+	}
+	h.inGame = n
+	for _, s := range h.sessions {
+		if s.client != nil && s.match == nil {
+			h.sendStats(s.client)
+		}
+	}
+}
+
+func (h *Hub) sendStats(c *client) {
+	c.send(protocol.Stats{Type: "stats", InGame: h.inGame})
 }
 
 func (h *Hub) sweep(now time.Time) {
@@ -219,8 +260,11 @@ func (h *Hub) disconnect(c *client) {
 	s.client = nil
 	s.lastSeen = time.Now()
 	h.removeFromQueue(s)
-	if s.match != nil {
-		h.broadcast(s.match)
+	if m := s.match; m != nil {
+		h.broadcast(m)
+		if m.game.Over() {
+			h.abandonLater(s, m)
+		}
 	}
 }
 
@@ -291,7 +335,7 @@ func (h *Hub) move(s *session, x, y int) {
 		return
 	}
 	if m.game.Over() {
-		h.stopTimer(m)
+		h.gameEnded(m)
 	} else {
 		h.resetTimer(m)
 	}
@@ -324,7 +368,7 @@ func (h *Hub) leave(s *session) {
 	if m := s.match; m != nil {
 		if !m.game.Over() {
 			m.game.Forfeit(seatMark(m.seat(s)), game.Resign)
-			h.stopTimer(m)
+			h.gameEnded(m)
 		}
 		h.detach(s)
 	}
@@ -363,8 +407,33 @@ func (h *Hub) turnExpired(m *match, gen int) {
 		return
 	}
 	m.game.Forfeit(m.game.Turn(), game.Timeout)
-	h.stopTimer(m)
+	h.gameEnded(m)
 	h.broadcast(m)
+}
+
+// gameEnded stops the clock of a match that just finished. A player who is
+// already gone (e.g. closed the page and then lost on time) won't be back for
+// a rematch either.
+func (h *Hub) gameEnded(m *match) {
+	h.stopTimer(m)
+	for _, p := range m.players {
+		if p.client == nil && p.match == m {
+			h.abandonLater(p, m)
+		}
+	}
+}
+
+// abandonLater takes a disconnected player out of their finished match once
+// the grace period passes without them coming back, which tells the opponent
+// that the rematch is off.
+func (h *Hub) abandonLater(s *session, m *match) {
+	time.AfterFunc(h.cfg.RematchGrace, func() {
+		h.mu.Lock()
+		defer h.mu.Unlock()
+		if s.client == nil && s.match == m {
+			h.detach(s)
+		}
+	})
 }
 
 // sendStatus tells a player which screen they belong on.
@@ -377,8 +446,10 @@ func (h *Hub) sendStatus(s *session) {
 		s.client.send(h.gameState(s.match, s.match.seat(s)))
 	case s.queued:
 		s.client.send(protocol.Simple{Type: "queued"})
+		h.sendStats(s.client)
 	default:
 		s.client.send(protocol.Simple{Type: "lobby"})
+		h.sendStats(s.client)
 	}
 }
 
