@@ -1,0 +1,25 @@
+{
+	# TLS is terminated by Cloudflare; Caddy only speaks plain HTTP inside Docker.
+	auto_https off
+	admin off
+}
+
+:80 {
+	encode zstd gzip
+
+	header {
+		X-Content-Type-Options nosniff
+		Referrer-Policy no-referrer
+		-Server
+	}
+
+	handle /ws {
+		reverse_proxy {$SERVER_UPSTREAM:server:8080}
+	}
+
+	handle {
+		root * /srv
+		header /_astro/* Cache-Control "public, max-age=31536000, immutable"
+		file_server
+	}
+}

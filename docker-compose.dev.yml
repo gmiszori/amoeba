@@ -1,0 +1,41 @@
+# Development stack with hot reload:
+#   docker compose -f docker-compose.dev.yml up --build --watch
+# Client edits reload in the browser instantly; server edits rebuild the Go container.
+name: amoeba-dev
+
+services:
+  server:
+    build: ./server
+    environment:
+      TURN_SECONDS: ${TURN_SECONDS:-30}
+    develop:
+      watch:
+        - path: ./server
+          action: rebuild
+
+  client:
+    build:
+      context: ./client
+      target: dev
+    develop:
+      watch:
+        - path: ./client/src
+          target: /app/src
+          action: sync
+        - path: ./client/public
+          target: /app/public
+          action: sync
+        - path: ./client/astro.config.mjs
+          action: rebuild
+        - path: ./client/package.json
+          action: rebuild
+
+  web:
+    image: caddy:2.10-alpine
+    volumes:
+      - ./client/Caddyfile.dev:/etc/caddy/Caddyfile:ro
+    ports:
+      - "${HTTP_BIND:-127.0.0.1}:${HTTP_PORT:-8080}:80"
+    depends_on:
+      - server
+      - client

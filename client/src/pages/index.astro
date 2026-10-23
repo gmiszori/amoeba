@@ -1,0 +1,107 @@
+---
+import "../styles/global.css";
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover"
+    />
+    <meta name="description" content="Five in a row on an endless board. Play amőba with someone online." />
+    <meta name="theme-color" content="#f6f4ef" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#16171b" media="(prefers-color-scheme: dark)" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="amőba" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <title>amőba</title>
+  </head>
+  <body>
+    <section id="screen-lobby" class="screen centered">
+      <div class="card">
+        <div class="logo" aria-hidden="true"><span class="x">✕</span><span class="o">◯</span></div>
+        <h1>amőba</h1>
+        <p class="tagline">Five in a row on an endless board.</p>
+        <form id="join-form" novalidate>
+          <label for="name">Username</label>
+          <input
+            id="name"
+            name="name"
+            type="text"
+            maxlength="32"
+            autocomplete="nickname"
+            autocapitalize="off"
+            autocorrect="off"
+            spellcheck="false"
+            enterkeyhint="go"
+            placeholder="e.g. Gergő"
+            required
+          />
+          <p id="name-error" class="field-error" role="alert"></p>
+          <button id="join" type="submit" class="primary">Enter matchmaking</button>
+        </form>
+      </div>
+    </section>
+
+    <section id="screen-queue" class="screen centered" hidden>
+      <div class="card">
+        <div class="spinner" aria-hidden="true"><span class="x">✕</span><span class="o">◯</span></div>
+        <h2>Looking for an opponent…</h2>
+        <p class="muted">Send the link to a friend to play together.</p>
+        <button id="cancel" type="button">Cancel</button>
+      </div>
+    </section>
+
+    <section id="screen-game" class="screen" hidden>
+      <canvas id="board" aria-label="Game board"></canvas>
+
+      <header class="hud">
+        <div class="player" id="player-x" data-mark="X">
+          <span class="mark x" aria-hidden="true">✕</span>
+          <span class="who"><span class="pname"></span><span class="tag"></span></span>
+        </div>
+        <div class="clock" id="clock">
+          <span id="clock-text">30</span>
+          <div class="clock-track"><div class="clock-bar" id="clock-bar"></div></div>
+        </div>
+        <div class="player" id="player-o" data-mark="O">
+          <span class="who"><span class="pname"></span><span class="tag"></span></span>
+          <span class="mark o" aria-hidden="true">◯</span>
+        </div>
+      </header>
+
+      <div class="controls">
+        <button id="leave" type="button" class="icon" aria-label="Leave game" title="Leave game">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 18l-6-6 6-6" /></svg>
+        </button>
+        <p id="status" class="status" aria-live="polite"></p>
+        <button id="recenter" type="button" class="icon" aria-label="Recenter board" title="Recenter board">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <circle cx="12" cy="12" r="3.5"></circle><path d="M12 2v4M12 18v4M2 12h4M18 12h4"></path>
+          </svg>
+        </button>
+      </div>
+
+      <div id="result" class="sheet" hidden>
+        <h2 id="result-title"></h2>
+        <p id="result-detail" class="muted"></p>
+        <div class="sheet-actions">
+          <button id="rematch" type="button" class="primary">Rematch</button>
+          <button id="back" type="button">Back to matchmaking</button>
+        </div>
+      </div>
+    </section>
+
+    <div id="banner" class="banner" hidden>
+      <span id="banner-text"></span>
+      <button id="banner-action" type="button" hidden>Use here</button>
+    </div>
+    <div id="toast" class="toast" role="status" hidden></div>
+
+    <script>
+      import "../scripts/main";
+    </script>
+  </body>
+</html>

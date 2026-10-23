@@ -1,0 +1,37 @@
+# Production stack. Locally:   docker compose up --build
+# On the VPS, set COMPOSE_PROFILES=tunnel in .env to also start cloudflared.
+name: amoeba
+
+services:
+  server:
+    build: ./server
+    restart: unless-stopped
+    environment:
+      TURN_SECONDS: ${TURN_SECONDS:-30}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-}
+    healthcheck:
+      test: ["CMD", "/amoeba-server", "-healthcheck"]
+      interval: 30s
+      timeout: 5s
+      start_period: 5s
+
+  web:
+    build: ./client
+    restart: unless-stopped
+    depends_on:
+      server:
+        condition: service_healthy
+    ports:
+      # Bound to localhost by default: on the VPS traffic arrives via the
+      # tunnel, so nothing needs to be exposed publicly.
+      - "${HTTP_BIND:-127.0.0.1}:${HTTP_PORT:-8080}:80"
+
+  cloudflared:
+    image: cloudflare/cloudflared:2025.9.1
+    profiles: ["tunnel"]
+    restart: unless-stopped
+    command: tunnel --no-autoupdate run
+    environment:
+      TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN:-}
+    depends_on:
+      - web

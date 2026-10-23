@@ -1,0 +1,15 @@
+{
+	auto_https off
+	admin off
+}
+
+:80 {
+	handle /ws {
+		reverse_proxy server:8080
+	}
+
+	# Astro dev server, including its hot-reload WebSocket.
+	handle {
+		reverse_proxy client:4321
+	}
+}
