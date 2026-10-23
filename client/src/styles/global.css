@@ -1,37 +1,58 @@
+/* Inter and JetBrains Mono, self-hosted (bundled by esbuild); every subset
+   loads on demand, so Hungarian ő/ű come from latin-ext. */
+@import "@fontsource-variable/inter/index.css";
+@import "@fontsource-variable/jetbrains-mono/index.css";
+
+/* Tokens from the miszori.dev design system: near-monochrome surfaces, one
+   indigo accent (focus, hover borders), frosted cards. The X/O colours are
+   the game's own and stay blue and red. */
 :root {
   color-scheme: light dark;
-  --bg: #f6f4ef;
-  --surface: #ffffff;
-  --text: #1d1f24;
-  --muted: #6b6f78;
-  --border: #e2ded4;
+  --bg: #ffffff;
+  --surface: rgba(255, 255, 255, 0.8);
+  --text: #000000;
+  --text-muted: #2c3441;
+  --text-sub: #6a7585;
+  --border: rgba(15, 23, 42, 0.1);
+  --accent: #4f46e5;
+  --accent-glow: rgba(79, 70, 229, 0.06);
+  --pill-bg: rgba(0, 0, 0, 0.05);
   --x: #2563eb;
   --x-preview: #7fa8f2;
   --o: #dc2626;
   --o-preview: #ef8b8b;
-  --board-bg: #fbfaf7;
-  --board-grid: #e3dfd5;
-  --board-last: #f1ecdf;
-  --shadow: 0 8px 30px rgb(30 25 10 / 0.12);
-  --radius: 16px;
-  --font: ui-rounded, "SF Pro Rounded", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --board-bg: #ffffff;
+  --board-grid: rgba(15, 23, 42, 0.08);
+  --board-last: rgba(15, 23, 42, 0.05);
+  --shadow: 0 10px 30px -10px rgba(15, 23, 42, 0.12);
+  --radius-sm: 12px;
+  --radius-md: 16px;
+  --radius-pill: 999px;
+  --blur: blur(12px);
+  --ease: 0.3s ease;
+  --font: "Inter Variable", "Inter", system-ui, -apple-system, sans-serif;
+  --mono: "JetBrains Mono Variable", "JetBrains Mono", ui-monospace, monospace;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #16171b;
-    --surface: #212228;
-    --text: #ececef;
-    --muted: #9a9ca6;
-    --border: #33343c;
+    --bg: #000000;
+    --surface: #000000;
+    --text: #ffffff;
+    --text-muted: #e0e3e9;
+    --text-sub: #989fae;
+    --border: rgba(255, 255, 255, 0.1);
+    --accent: #6366f1;
+    --accent-glow: rgba(99, 102, 241, 0.15);
+    --pill-bg: rgba(255, 255, 255, 0.03);
     --x: #4f8bff;
     --x-preview: #8fb6ff;
     --o: #f04848;
     --o-preview: #ff8a8a;
-    --board-bg: #1a1b20;
-    --board-grid: #2b2c33;
-    --board-last: #26272e;
-    --shadow: 0 8px 30px rgb(0 0 0 / 0.45);
+    --board-bg: #000000;
+    --board-grid: rgba(255, 255, 255, 0.09);
+    --board-last: rgba(255, 255, 255, 0.07);
+    --shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.5);
   }
 }
 
@@ -78,7 +99,12 @@ body {
   color: var(--o);
 }
 .muted {
-  color: var(--muted);
+  color: var(--text-muted);
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 4px;
 }
 
 /* ---- screens ---- */
@@ -90,6 +116,8 @@ body {
 
 .centered {
   display: grid;
+  /* The landing glow: one soft accent radial, fixed top-right. */
+  background: radial-gradient(600px circle at 100% 0%, var(--accent-glow), transparent 70%);
   place-items: center;
   padding: max(16px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right))
     max(16px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
@@ -99,25 +127,39 @@ body {
 .card {
   width: min(100%, 380px);
   background: var(--surface);
+  backdrop-filter: var(--blur);
+  -webkit-backdrop-filter: var(--blur);
   border: 1px solid var(--border);
-  border-radius: var(--radius);
+  border-radius: var(--radius-md);
   box-shadow: var(--shadow);
-  padding: 32px 24px 24px;
+  padding: 32px;
   text-align: center;
 }
 
+h1,
+h2 {
+  text-wrap: balance;
+}
 h1 {
-  margin: 4px 0 0;
-  font-size: 2.6rem;
-  letter-spacing: -0.02em;
+  margin: 8px 0 0;
+  font-size: 2.8rem;
+  line-height: 1.1;
+  font-weight: 900;
+  letter-spacing: -0.04em;
 }
 h2 {
   margin: 0 0 6px;
-  font-size: 1.3rem;
+  font-size: 1.35rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+p {
+  font-size: 0.98rem;
+  line-height: 1.6;
 }
 .tagline {
   margin: 4px 0 24px;
-  color: var(--muted);
+  color: var(--text-muted);
 }
 
 .logo,
@@ -162,16 +204,20 @@ input {
   font: inherit;
   font-size: 16px; /* anything smaller makes iOS zoom in on focus */
   padding: 12px 14px;
-  border-radius: 12px;
+  border-radius: var(--radius-sm);
   border: 1px solid var(--border);
-  background: var(--bg);
+  background: var(--pill-bg);
   color: var(--text);
   user-select: text;
   -webkit-user-select: text;
+  transition: border-color var(--ease);
+}
+input::placeholder {
+  color: var(--text-sub);
 }
 input:focus {
-  outline: 2px solid var(--x);
-  outline-offset: 1px;
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 .field-error {
@@ -183,15 +229,30 @@ input:focus {
 
 button {
   font: inherit;
+  font-size: 0.95rem;
   font-weight: 600;
   min-height: 48px;
   padding: 0 20px;
-  border-radius: 12px;
+  border-radius: var(--radius-sm);
   border: 1px solid var(--border);
   background: var(--surface);
+  backdrop-filter: var(--blur);
+  -webkit-backdrop-filter: var(--blur);
   color: var(--text);
   cursor: pointer;
   touch-action: manipulation;
+  transition:
+    transform var(--ease),
+    background-color var(--ease),
+    border-color var(--ease),
+    color var(--ease),
+    box-shadow var(--ease);
+}
+@media (hover: hover) {
+  button:hover:not(:disabled) {
+    border-color: var(--accent);
+    transform: translateY(-2px);
+  }
 }
 button:active:not(:disabled) {
   transform: scale(0.98);
@@ -200,10 +261,11 @@ button:disabled {
   opacity: 0.55;
   cursor: default;
 }
+/* The one filled button: inverted, so black on white and white on black. */
 button.primary {
-  background: var(--x);
-  border-color: var(--x);
-  color: #fff;
+  background: var(--text);
+  border-color: var(--text);
+  color: var(--bg);
 }
 .card button {
   width: 100%;
@@ -215,7 +277,7 @@ button.primary {
   align-items: center;
   gap: 12px;
   margin: 16px 0 8px;
-  color: var(--muted);
+  color: var(--text-sub);
   font-size: 0.85rem;
 }
 .divider::before,
@@ -228,14 +290,17 @@ button.primary {
 
 .online {
   display: flex;
-  align-items: center;
+  align-items: baseline;
   justify-content: center;
   gap: 6px;
-  margin: 18px 0 0;
-  font-size: 0.9rem;
-  color: var(--muted);
+  margin: 20px 0 0;
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: var(--text-sub);
 }
 .online strong {
+  font-family: var(--mono);
+  font-weight: 500;
   color: var(--text);
   font-variant-numeric: tabular-nums;
 }
@@ -269,16 +334,18 @@ button.primary {
 .player {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   justify-self: start;
   max-width: 100%;
   min-width: 0;
-  padding: 4px 10px;
+  padding: 5px 14px;
   background: var(--surface);
-  border: 2px solid transparent;
-  border-radius: 12px;
+  backdrop-filter: var(--blur);
+  -webkit-backdrop-filter: var(--blur);
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius-pill);
   box-shadow: var(--shadow);
-  transition: border-color 0.2s, opacity 0.2s;
+  transition: border-color var(--ease), opacity var(--ease);
   opacity: 0.7;
 }
 #player-o {
@@ -315,7 +382,8 @@ button.primary {
 }
 .tag {
   font-size: 0.65rem;
-  color: var(--muted);
+  font-weight: 500;
+  color: var(--text-sub);
 }
 .tag.offline {
   color: var(--o);
@@ -325,19 +393,24 @@ button.primary {
   display: grid;
   justify-items: center;
   gap: 4px;
-  min-width: 56px;
-  padding: 4px 8px;
+  min-width: 60px;
+  padding: 5px 10px 7px;
   background: var(--surface);
-  border-radius: 14px;
+  backdrop-filter: var(--blur);
+  -webkit-backdrop-filter: var(--blur);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
   box-shadow: var(--shadow);
+  font-family: var(--mono);
   font-variant-numeric: tabular-nums;
-  font-weight: 800;
+  font-weight: 700;
   font-size: 1rem;
+  line-height: 1.2;
 }
 .clock-track {
-  width: 48px;
-  height: 4px;
-  border-radius: 2px;
+  width: 40px;
+  height: 3px;
+  border-radius: var(--radius-pill);
   background: var(--border);
   overflow: hidden;
 }
@@ -382,15 +455,15 @@ button.icon {
   padding: 0;
   display: grid;
   place-items: center;
-  border-radius: 50%;
+  border-radius: var(--radius-pill);
   box-shadow: var(--shadow);
 }
 button.icon svg {
-  width: 22px;
-  height: 22px;
+  width: 18px;
+  height: 18px;
   fill: none;
   stroke: currentColor;
-  stroke-width: 2.2;
+  stroke-width: 2;
   stroke-linecap: round;
   stroke-linejoin: round;
 }
@@ -398,12 +471,18 @@ button.icon svg {
 .status {
   justify-self: center;
   margin: 0;
-  padding: 10px 16px;
+  padding: 10px 18px;
   max-width: 100%;
   background: var(--surface);
-  border-radius: 999px;
+  backdrop-filter: var(--blur);
+  -webkit-backdrop-filter: var(--blur);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
   box-shadow: var(--shadow);
-  font-size: 0.92rem;
+  color: var(--text-muted);
+  font-size: 0.9rem;
+  font-weight: 500;
+  line-height: 1.4;
   text-align: center;
   pointer-events: none;
 }
@@ -417,13 +496,15 @@ button.icon svg {
   bottom: calc(max(12px, env(safe-area-inset-bottom)) + 70px);
   transform: translateX(-50%);
   width: min(calc(100% - 24px), 420px);
-  padding: 20px;
+  padding: 24px;
   background: var(--surface);
+  backdrop-filter: var(--blur);
+  -webkit-backdrop-filter: var(--blur);
   border: 1px solid var(--border);
-  border-radius: var(--radius);
+  border-radius: var(--radius-md);
   box-shadow: var(--shadow);
   text-align: center;
-  animation: rise 0.25s ease-out;
+  animation: rise 0.3s ease-out;
 }
 .sheet p {
   margin: 0 0 14px;
@@ -462,15 +543,16 @@ button.blurred {
   max-width: calc(100% - 24px);
   background: var(--text);
   color: var(--bg);
-  border-radius: 999px;
-  font-size: 0.9rem;
+  border-radius: var(--radius-pill);
+  font-size: 0.85rem;
   font-weight: 600;
   z-index: 10;
 }
 .banner button {
   min-height: 34px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   padding: 0 14px;
+  backdrop-filter: none;
 }
 
 .toast {
@@ -482,8 +564,9 @@ button.blurred {
   max-width: calc(100% - 24px);
   background: var(--text);
   color: var(--bg);
-  border-radius: 12px;
-  font-size: 0.9rem;
+  border-radius: var(--radius-sm);
+  font-size: 0.85rem;
+  font-weight: 500;
   z-index: 10;
 }
 
@@ -497,11 +580,20 @@ button.blurred {
   }
 }
 
+@media (max-width: 420px) {
+  .card {
+    padding: 28px 24px 24px;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
   *::after {
     animation: none !important;
     transition: none !important;
+  }
+  button:hover:not(:disabled) {
+    transform: none;
   }
 }

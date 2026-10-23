@@ -24,6 +24,9 @@ const options = {
   minify: !dev,
   sourcemap: dev,
   metafile: true,
+  // Fonts imported by the CSS land next to the bundles, hashed the same way.
+  loader: { ".woff2": "file", ".woff": "file" },
+  assetNames: dev ? "[name]" : "[name]-[hash]",
   define: { DEV: String(dev) },
   logLevel: "info",
 };
