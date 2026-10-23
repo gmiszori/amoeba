@@ -22,7 +22,7 @@ type message struct {
 	Name    string `json:"name"`
 	Message string `json:"message"`
 	Code    string `json:"code"`
-	InGame  int    `json:"inGame"`
+	Online  int    `json:"online"`
 }
 
 type testClient struct {
@@ -305,17 +305,26 @@ func TestZalgoNameRejected(t *testing.T) {
 	}
 }
 
-func TestInGameCount(t *testing.T) {
+func TestOnlineCount(t *testing.T) {
 	url := startServer(t, time.Minute)
 	watcher := dial(t, url)
 	watcher.hello("")
-	if st := watcher.expect("stats", nil); st.InGame != 0 {
-		t.Fatalf("initial in-game count %d, want 0", st.InGame)
+	if st := watcher.expect("stats", nil); st.Online != 0 {
+		t.Fatalf("initial online count %d, want 0", st.Online)
 	}
+
+	waiting := dial(t, url)
+	waiting.hello("")
+	waiting.send(protocol.Inbound{Type: "join", Name: "carol"})
+	watcher.expect("stats", func(m message) bool { return m.Online == 1 }) // in the queue
+
+	waiting.send(protocol.Inbound{Type: "cancel"})
+	watcher.expect("stats", func(m message) bool { return m.Online == 0 })
+
 	x, _, _, _ := matchPair(t, url)
-	watcher.expect("stats", func(m message) bool { return m.InGame == 2 })
+	watcher.expect("stats", func(m message) bool { return m.Online == 2 })
 	x.send(protocol.Inbound{Type: "leave"}) // resigns; the game is over
-	watcher.expect("stats", func(m message) bool { return m.InGame == 0 })
+	watcher.expect("stats", func(m message) bool { return m.Online == 0 })
 }
 
 func TestRematchCancelledWhenOpponentLeavesSite(t *testing.T) {

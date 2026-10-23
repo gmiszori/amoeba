@@ -1,8 +1,3 @@
----
-import Mark from "../components/Mark.astro";
-import "../styles/global.css";
----
-
 <!doctype html>
 <html lang="en">
   <head>
@@ -17,12 +12,29 @@ import "../styles/global.css";
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-title" content="amőba" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <!-- build.mjs fills in the hashed bundle paths for the two tags below. -->
+    <link rel="stylesheet" href="{{css}}" />
+    <script type="module" src="{{js}}"></script>
     <title>amőba</title>
   </head>
   <body>
+    <!-- X and O, drawn with the same proportions as the board's canvas marks
+         so both come out the same size. Used below via <use href="#mark-x">. -->
+    <svg class="sprite" aria-hidden="true">
+      <symbol id="mark-x" viewBox="0 0 100 100">
+        <path d="M22 22L78 78M78 22L22 78" fill="none" stroke="currentColor" stroke-width="12" stroke-linecap="round" />
+      </symbol>
+      <symbol id="mark-o" viewBox="0 0 100 100">
+        <circle cx="50" cy="50" r="30" fill="none" stroke="currentColor" stroke-width="12" />
+      </symbol>
+    </svg>
+
     <section id="screen-lobby" class="screen centered">
       <div class="card">
-        <div class="logo" aria-hidden="true"><Mark kind="X" /><Mark kind="O" /></div>
+        <div class="logo" aria-hidden="true">
+          <svg class="mark-icon x"><use href="#mark-x" /></svg>
+          <svg class="mark-icon o"><use href="#mark-o" /></svg>
+        </div>
         <h1>amőba</h1>
         <p class="tagline">Five in a row on an endless board.</p>
         <form id="join-form" novalidate>
@@ -45,17 +57,20 @@ import "../styles/global.css";
         </form>
         <div class="divider"><span>or</span></div>
         <button id="local" type="button">Play on this device</button>
-        <p class="in-game" hidden><span class="live-dot" aria-hidden="true"></span>In game: <strong class="in-game-count">0</strong></p>
+        <p class="online" hidden>Players online: <strong class="online-count">0</strong></p>
       </div>
     </section>
 
     <section id="screen-queue" class="screen centered" hidden>
       <div class="card">
-        <div class="spinner" aria-hidden="true"><Mark kind="X" /><Mark kind="O" /></div>
+        <div class="spinner" aria-hidden="true">
+          <svg class="mark-icon x"><use href="#mark-x" /></svg>
+          <svg class="mark-icon o"><use href="#mark-o" /></svg>
+        </div>
         <h2>Looking for an opponent…</h2>
         <p class="muted">Send the link to a friend to play together.</p>
         <button id="cancel" type="button">Cancel</button>
-        <p class="in-game" hidden><span class="live-dot" aria-hidden="true"></span>In game: <strong class="in-game-count">0</strong></p>
+        <p class="online" hidden>Players online: <strong class="online-count">0</strong></p>
       </div>
     </section>
 
@@ -64,7 +79,7 @@ import "../styles/global.css";
 
       <header class="hud">
         <div class="player" id="player-x" data-mark="X">
-          <Mark kind="X" class="mark" />
+          <svg class="mark-icon x mark" aria-hidden="true"><use href="#mark-x" /></svg>
           <span class="who"><span class="pname"></span><span class="tag"></span></span>
         </div>
         <div class="clock" id="clock">
@@ -73,7 +88,7 @@ import "../styles/global.css";
         </div>
         <div class="player" id="player-o" data-mark="O">
           <span class="who"><span class="pname"></span><span class="tag"></span></span>
-          <Mark kind="O" class="mark" />
+          <svg class="mark-icon o mark" aria-hidden="true"><use href="#mark-o" /></svg>
         </div>
       </header>
 
@@ -105,9 +120,5 @@ import "../styles/global.css";
       <button id="banner-action" type="button" hidden>Use here</button>
     </div>
     <div id="toast" class="toast" role="status" hidden></div>
-
-    <script>
-      import "../scripts/main";
-    </script>
   </body>
 </html>

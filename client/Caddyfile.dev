@@ -8,7 +8,7 @@
 		reverse_proxy server:8080
 	}
 
-	# Astro dev server, including its hot-reload WebSocket.
+	# esbuild dev server, including its live-reload event stream.
 	handle {
 		reverse_proxy client:4321
 	}

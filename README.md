@@ -6,14 +6,15 @@ waiting. Blue ✕ always moves first; five or more in a row (horizontal,
 vertical or diagonal) wins. Each turn has a 30 second clock: run out and you
 lose. Built mobile-first so it plays well on phones and iPads.
 
-The home screen shows how many players are in a game right now, and
+The home screen shows how many players are online right now (in a game or
+waiting for an opponent), and
 "Play on this device" starts a local game for two people sharing one screen
 (no username, no timer, no server involved).
 
 ## Architecture
 
 ```
-Browser ─► [webserver proxy :80/:443] ─► [web: Caddy, automatic HTTPS] ─┬─ static Astro build
+Browser ─► [webserver proxy :80/:443] ─► [web: Caddy, automatic HTTPS] ─┬─ static site
                                                                         └─ /ws ─► [server: Go :8080]
 ```
 
@@ -25,7 +26,7 @@ the certificate.
 | Directory | What |
 |-----------|------|
 | `server/` | Go WebSocket server: sessions, matchmaking queue, game rules, turn clock. All state in memory; the server is authoritative. |
-| `client/` | Astro static site; the game is a plain TypeScript canvas app. Also holds the `Caddyfile`; the production image is Caddy serving the build. |
+| `client/` | Plain `index.html` + CSS + TypeScript (canvas game), bundled by esbuild (`build.mjs`); `tsc` only type-checks. Also holds the `Caddyfile`; the production image is Caddy serving the build. |
 | `docs/protocol.md` | The WebSocket message protocol. |
 
 Usernames are 1–16 characters and are checked against an English and

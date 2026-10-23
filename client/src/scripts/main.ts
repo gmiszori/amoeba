@@ -1,6 +1,9 @@
 import { BoardView } from "./board";
 import { Connection } from "./connection";
 import { LocalGame } from "./local";
+
+// Dev builds reload the page whenever esbuild rebuilds (see build.mjs).
+if (DEV) new EventSource("/esbuild").addEventListener("change", () => location.reload());
 import { normalizeName, type Cell, type GameState, type ServerMessage } from "./protocol";
 
 const TOKEN_KEY = "amoeba.token";
@@ -38,8 +41,8 @@ const ui = {
   join: $<HTMLButtonElement>("join"),
   cancel: $<HTMLButtonElement>("cancel"),
   local: $<HTMLButtonElement>("local"),
-  inGame: document.querySelectorAll<HTMLElement>(".in-game"),
-  inGameCount: document.querySelectorAll<HTMLElement>(".in-game-count"),
+  online: document.querySelectorAll<HTMLElement>(".online"),
+  onlineCount: document.querySelectorAll<HTMLElement>(".online-count"),
   playerX: $("player-x"),
   playerO: $("player-o"),
   clock: $("clock"),
@@ -140,8 +143,8 @@ function handleMessage(msg: ServerMessage): void {
       }
       break;
     case "stats":
-      for (const el of ui.inGameCount) el.textContent = String(msg.inGame);
-      for (const el of ui.inGame) el.hidden = false;
+      for (const el of ui.onlineCount) el.textContent = String(msg.online);
+      for (const el of ui.online) el.hidden = false;
       break;
     case "kicked":
       conn.stop();

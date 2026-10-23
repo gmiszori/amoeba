@@ -25,7 +25,10 @@ services:
         - path: ./client/public
           target: /app/public
           action: sync
-        - path: ./client/astro.config.mjs
+        - path: ./client/index.html
+          target: /app/index.html
+          action: sync
+        - path: ./client/build.mjs
           action: rebuild
         - path: ./client/package.json
           action: rebuild

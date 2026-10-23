@@ -29,7 +29,7 @@ decides the winner. Clients only send intentions.
 | `game`    | see below | Full state of your current match. Sent whenever it changes. |
 | `error`   | `code?`, `message` | A request was rejected. `code` is `name` when the username was invalid or blocked (see `server/internal/hub/badwords.txt`); the player is back in the lobby. |
 | `kicked`  |        | The same session connected from elsewhere; this connection closes. Don't reconnect automatically. |
-| `stats`   | `inGame` | Number of players in running games. Sent with `lobby`/`queued` and again (at most once a second) whenever it changes, to players not in a game. |
+| `stats`   | `online` | Number of players in running games or waiting in the queue. Sent with `lobby`/`queued` and again (at most once a second) whenever it changes, to players not in a game. |
 
 ### `game`
 

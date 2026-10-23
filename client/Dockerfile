@@ -4,8 +4,8 @@ COPY package.json package-lock.json ./
 RUN npm ci
 COPY . .
 
-# Used by docker-compose.dev.yml for the hot-reloading dev server; compose
-# watch syncs source edits into the running container.
+# Used by docker-compose.dev.yml: esbuild watches, rebuilds and serves on
+# :4321; compose watch syncs source edits into the running container.
 FROM source AS dev
 EXPOSE 4321
 CMD ["npm", "run", "dev"]

@@ -31,7 +31,7 @@ type Error struct {
 // Stats is sent to players on the home and matchmaking screens.
 type Stats struct {
 	Type   string `json:"type"`   // stats
-	InGame int    `json:"inGame"` // players currently in a running game
+	Online int    `json:"online"` // players in a running game or waiting in the queue
 }
 
 // Cell is an [x, y] coordinate pair.

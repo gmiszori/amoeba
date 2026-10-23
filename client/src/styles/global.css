@@ -63,6 +63,14 @@ body {
   display: none !important;
 }
 
+/* Holds the <symbol> definitions for the X/O icons; never visible itself. */
+.sprite {
+  position: absolute;
+  width: 0;
+  height: 0;
+  overflow: hidden;
+}
+
 .x {
   color: var(--x);
 }
@@ -218,7 +226,7 @@ button.primary {
   background: var(--border);
 }
 
-.in-game {
+.online {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -227,17 +235,11 @@ button.primary {
   font-size: 0.9rem;
   color: var(--muted);
 }
-.in-game strong {
+.online strong {
   color: var(--text);
   font-variant-numeric: tabular-nums;
 }
-.live-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: #22c55e;
-  box-shadow: 0 0 0 3px rgb(34 197 94 / 0.2);
-}
+
 
 /* ---- game ---- */
 

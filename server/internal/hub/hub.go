@@ -42,7 +42,7 @@ type Config struct {
 	// back before the opponent is told no rematch is coming. Default 3s, so a
 	// phone's brief connection blip doesn't count as leaving.
 	RematchGrace time.Duration
-	// StatsInterval is how often the in-game count is refreshed. Default 1s.
+	// StatsInterval is how often the online count is refreshed. Default 1s.
 	StatsInterval time.Duration
 }
 
@@ -54,7 +54,7 @@ type Hub struct {
 	queue     []*session
 	conns     int
 	connsByIP map[string]int
-	inGame    int // players in running matches, as last broadcast
+	online    int // players in running matches or the queue, as last broadcast
 }
 
 // session is a player identity that survives reconnects. The client keeps its
@@ -102,7 +102,7 @@ func New(cfg Config) *Hub {
 	return &Hub{cfg: cfg, sessions: make(map[string]*session), connsByIP: make(map[string]int)}
 }
 
-// Run periodically refreshes the in-game count and forgets sessions that have
+// Run periodically refreshes the online count and forgets sessions that have
 // been gone for a while. It returns when ctx is done.
 func (h *Hub) Run(ctx context.Context) {
 	sweep := time.NewTicker(sweepInterval)
@@ -121,22 +121,23 @@ func (h *Hub) Run(ctx context.Context) {
 	}
 }
 
-// refreshStats recounts the players in running matches and, when the number
-// changed, tells everyone on the home or matchmaking screen. Counting on a
+// refreshStats recounts the players who are playing or waiting for an
+// opponent and, when the number changed, tells everyone on the home or
+// matchmaking screen. Counting on a
 // timer rather than on every change batches bursts into one update.
 func (h *Hub) refreshStats() {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	n := 0
 	for _, s := range h.sessions {
-		if s.match != nil && !s.match.game.Over() {
+		if s.queued || (s.match != nil && !s.match.game.Over()) {
 			n++
 		}
 	}
-	if n == h.inGame {
+	if n == h.online {
 		return
 	}
-	h.inGame = n
+	h.online = n
 	for _, s := range h.sessions {
 		if s.client != nil && s.match == nil {
 			h.sendStats(s.client)
@@ -145,7 +146,7 @@ func (h *Hub) refreshStats() {
 }
 
 func (h *Hub) sendStats(c *client) {
-	c.send(protocol.Stats{Type: "stats", InGame: h.inGame})
+	c.send(protocol.Stats{Type: "stats", Online: h.online})
 }
 
 func (h *Hub) sweep(now time.Time) {
