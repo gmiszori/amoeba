@@ -329,7 +329,7 @@ function renderHud(): void {
   ui.result.hidden = !g.over;
   if (g.over) {
     const won = g.winner === g.you;
-    ui.resultTitle.textContent = won ? "You won!" : "You lost";
+    ui.resultTitle.textContent = won ? "You won! 🎉" : "You lost";
     ui.resultTitle.className = g.winner === "X" ? "x" : "o";
     ui.resultDetail.textContent = resultDetail(g, won, opponent);
 
@@ -372,7 +372,7 @@ function renderLocalHud(g: GameState): void {
 
   ui.result.hidden = !g.over;
   if (g.over && g.winner) {
-    ui.resultTitle.textContent = `${markName(g.winner)} wins!`;
+    ui.resultTitle.textContent = `${markName(g.winner)} wins! 🎉`;
     ui.resultTitle.className = g.winner === "X" ? "x" : "o";
     ui.resultDetail.textContent = "Five in a row.";
     ui.resultNote.hidden = true;

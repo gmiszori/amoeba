@@ -22,7 +22,7 @@
   --o: #dc2626;
   --o-preview: #ef8b8b;
   --board-bg: #ffffff;
-  --board-grid: rgba(15, 23, 42, 0.08);
+  --board-grid: rgba(15, 23, 42, 0.16);
   --board-last: rgba(15, 23, 42, 0.05);
   --shadow: 0 10px 30px -10px rgba(15, 23, 42, 0.12);
   --radius-sm: 12px;
@@ -50,7 +50,7 @@
     --o: #f04848;
     --o-preview: #ff8a8a;
     --board-bg: #000000;
-    --board-grid: rgba(255, 255, 255, 0.09);
+    --board-grid: rgba(255, 255, 255, 0.17);
     --board-last: rgba(255, 255, 255, 0.07);
     --shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.5);
   }

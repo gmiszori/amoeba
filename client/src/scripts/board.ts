@@ -3,6 +3,8 @@ import type { Cell, Mark } from "./protocol";
 const MIN_SCALE = 12; // CSS px per cell
 const MAX_SCALE = 120;
 
+const GRID_WIDTH = 1; // CSS px
+
 // Mark geometry, as fractions of a cell.
 const MARK_WIDTH = 0.11; // stroke of a placed mark
 const GHOST_WIDTH = 0.085; // stroke of the dashed preview mark
@@ -309,19 +311,23 @@ export class BoardView {
       ctx.globalAlpha = 1;
     }
 
+    // Grid lines are a whole number of device pixels wide (at least one CSS
+    // pixel) and snapped to the device pixel grid so they stay crisp.
+    const gridPx = Math.max(1, Math.round(GRID_WIDTH * this.dpr));
+    const snap = (v: number) => (Math.round(v * this.dpr) + (gridPx % 2) / 2) / this.dpr;
     ctx.beginPath();
     for (let x = x0; x <= x1; x++) {
-      const px = Math.round(this.sx(x) * this.dpr) / this.dpr + 0.5 / this.dpr;
+      const px = snap(this.sx(x));
       ctx.moveTo(px, 0);
       ctx.lineTo(px, h);
     }
     for (let y = y0; y <= y1; y++) {
-      const py = Math.round(this.sy(y) * this.dpr) / this.dpr + 0.5 / this.dpr;
+      const py = snap(this.sy(y));
       ctx.moveTo(0, py);
       ctx.lineTo(w, py);
     }
     ctx.strokeStyle = theme.grid;
-    ctx.lineWidth = 1 / this.dpr;
+    ctx.lineWidth = gridPx / this.dpr;
     ctx.stroke();
 
     this.moves.forEach((cell, i) => {
