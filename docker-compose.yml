@@ -1,6 +1,6 @@
 # Production stack:   docker compose up --build -d
 # Set DOMAIN in .env; Caddy serves it with automatic HTTPS. Host ports 80 and
-# 443 belong to the webserver repo's proxy (github.com/gmiszori/webserver),
+# 443 belong to the webserver repo's proxy (github.com/gmiszori/webserver-proxy),
 # which must be running first: it creates the shared "webserver" network.
 name: amoeba
 

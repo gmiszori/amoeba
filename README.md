@@ -19,7 +19,7 @@ Browser ─► [webserver proxy :80/:443] ─► [web: Caddy, automatic HTTPS] �
 ```
 
 Host ports 80 and 443 belong to the shared proxy in
-[webserver](https://github.com/gmiszori/webserver), so several sites can run
+[webserver-proxy](https://github.com/gmiszori/webserver-proxy), so several sites can run
 on one server. It passes TLS through untouched; this repo's Caddy still holds
 the certificate.
 
@@ -74,7 +74,7 @@ docker build --target test server
 1. Point your domain's DNS `A` (and `AAAA`, if the server has IPv6) record at
    the server.
 2. Make sure inbound TCP 80 and 443 are open, and that the
-   [webserver](https://github.com/gmiszori/webserver) proxy is running with
+   [webserver-proxy](https://github.com/gmiszori/webserver-proxy) proxy is running with
    `AMOEBA_DOMAIN` set to your domain.
 3. On the server:
    ```bash
