@@ -43,7 +43,16 @@
 
 	handle {
 		root * /srv
+		# Challenge links are the same page; the app reads the code from the path.
+		@challenge path_regexp ^/c/[a-zA-Z0-9]+/?$
+		rewrite @challenge /index.html
+		# index.html uses templates for its own absolute URL in link previews.
+		templates
 		header /assets/* Cache-Control "public, max-age=31536000, immutable"
+		# The page and the service worker must be checked on every visit so a
+		# new deploy is picked up.
+		@fresh path / /c/* /index.html /sw.js /manifest.webmanifest
+		header @fresh Cache-Control "no-cache"
 		file_server
 	}
 }

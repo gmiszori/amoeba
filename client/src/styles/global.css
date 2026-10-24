@@ -21,6 +21,7 @@
   --x-preview: #7fa8f2;
   --o: #dc2626;
   --o-preview: #ef8b8b;
+  --live: #16a34a;
   --board-bg: #ffffff;
   --board-grid: rgba(15, 23, 42, 0.16);
   --board-last: rgba(15, 23, 42, 0.05);
@@ -49,6 +50,7 @@
     --x-preview: #8fb6ff;
     --o: #f04848;
     --o-preview: #ff8a8a;
+    --live: #22c55e;
     --board-bg: #000000;
     --board-grid: rgba(255, 255, 255, 0.17);
     --board-last: rgba(255, 255, 255, 0.07);
@@ -189,9 +191,10 @@ p {
   }
 }
 
-form {
+.field {
   display: grid;
   gap: 8px;
+  margin-top: 20px;
   text-align: left;
 }
 
@@ -272,28 +275,44 @@ button.primary {
   margin-top: 8px;
 }
 
-.divider {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin: 16px 0 8px;
-  color: var(--text-sub);
-  font-size: 0.85rem;
+/* Text-only button, for small secondary actions. */
+button.link {
+  min-height: 0;
+  padding: 0;
+  border: none;
+  background: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  color: inherit;
+  font-size: inherit;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  text-decoration-color: var(--border);
 }
-.divider::before,
-.divider::after {
-  content: "";
-  flex: 1;
-  height: 1px;
-  background: var(--border);
+@media (hover: hover) {
+  button.link:hover:not(:disabled) {
+    transform: none;
+    text-decoration-color: currentColor;
+  }
+}
+
+.btn-icon {
+  flex: none;
+  width: 20px;
+  height: 20px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
 .online {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   justify-content: center;
   gap: 6px;
-  margin: 20px 0 0;
+  margin: 14px 0 0;
   font-size: 0.85rem;
   font-weight: 500;
   color: var(--text-sub);
@@ -303,6 +322,154 @@ button.primary {
   font-weight: 500;
   color: var(--text);
   font-variant-numeric: tabular-nums;
+}
+.live-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--live);
+  box-shadow: 0 0 0 0 var(--live);
+  animation: live 2s ease-out infinite;
+}
+@keyframes live {
+  70% {
+    box-shadow: 0 0 0 6px transparent;
+  }
+}
+
+/* ---- home ---- */
+
+.home {
+  display: grid;
+  place-items: center;
+  padding: max(16px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right))
+    max(16px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
+  overflow-y: auto;
+}
+
+/* The decorative board fades out towards the middle so the menu stays easy
+   to read on top of it. */
+.backdrop {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  opacity: 0.7;
+  -webkit-mask-image: radial-gradient(closest-side, transparent 40%, #000 85%);
+  mask-image: radial-gradient(closest-side, transparent 40%, #000 85%);
+  -webkit-mask-size: 100% 100%;
+  mask-size: 100% 100%;
+}
+
+.home-content {
+  position: relative;
+  width: min(100%, 400px);
+  text-align: center;
+}
+.home-content .tagline {
+  margin-bottom: 28px;
+}
+
+button.big {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 60px;
+  font-size: 1.1rem;
+  box-shadow: var(--shadow);
+}
+button.big .btn-icon {
+  fill: currentColor;
+  stroke-width: 1.5;
+}
+
+.modes {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin-top: 20px;
+}
+button.mode {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 92px;
+  padding: 12px 6px;
+  font-size: 0.85rem;
+  line-height: 1.25;
+  box-shadow: var(--shadow);
+}
+button.mode .btn-icon {
+  width: 24px;
+  height: 24px;
+}
+
+.identity {
+  margin: 24px 0 0;
+  font-size: 0.85rem;
+  color: var(--text-sub);
+}
+.identity strong {
+  color: var(--text);
+  font-weight: 600;
+}
+.install {
+  margin-top: 12px;
+  font-size: 0.85rem;
+  color: var(--text-sub);
+}
+
+/* ---- name, challenge and invite ---- */
+
+.eyebrow {
+  margin: 12px 0 4px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-sub);
+}
+
+.link-box {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 20px 0 8px;
+  padding: 6px 6px 6px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--pill-bg);
+}
+.link-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: left;
+  font-family: var(--mono);
+  font-size: 0.85rem;
+  user-select: all;
+  -webkit-user-select: all;
+}
+.card .link-box button {
+  width: auto;
+  min-height: 36px;
+  margin: 0;
+  padding: 0 14px;
+}
+
+.bot-offer {
+  margin-top: 16px;
+}
+.bot-offer p {
+  margin: 0 0 4px;
+  color: var(--text-muted);
 }
 
 

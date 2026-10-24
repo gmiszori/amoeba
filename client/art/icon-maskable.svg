@@ -1,0 +1,9 @@
+<!-- Maskable app icon: Android crops it to a circle or squircle, so the marks
+     stay inside the middle 80%. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="512" height="512">
+  <rect width="64" height="64" fill="#f6f4ef"/>
+  <g transform="translate(32 32) scale(0.72) translate(-32 -32)">
+    <path d="M14 14l14 14M28 14L14 28" stroke="#2563eb" stroke-width="5.5" stroke-linecap="round"/>
+    <circle cx="43" cy="43" r="8" fill="none" stroke="#dc2626" stroke-width="5.5"/>
+  </g>
+</svg>

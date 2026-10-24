@@ -359,3 +359,76 @@ func TestBriefDropKeepsRematch(t *testing.T) {
 	o.send(protocol.Inbound{Type: "rematch"})
 	o.expect("game", func(m message) bool { return m.ID != first.ID })
 }
+
+func TestChallengeLink(t *testing.T) {
+	url := startServer(t, time.Minute)
+	a, b := dial(t, url), dial(t, url)
+	a.hello("")
+	b.hello("")
+
+	a.send(protocol.Inbound{Type: "challenge", Name: "alice"})
+	code := a.expect("challenge", nil).Code
+	if len(code) != codeLength {
+		t.Fatalf("challenge code %q", code)
+	}
+
+	b.send(protocol.Inbound{Type: "peek", Code: strings.ToUpper(code)})
+	if inv := b.expect("invite", nil); inv.Name != "alice" || inv.Code != code {
+		t.Fatalf("invite: %+v", inv)
+	}
+
+	b.send(protocol.Inbound{Type: "accept", Code: code, Name: "bob"})
+	ga := a.expect("game", nil)
+	gb := b.expect("game", nil)
+	if ga.ID != gb.ID || ga.Mode != "friend" || ga.OpponentName != "bob" || gb.OpponentName != "alice" {
+		t.Fatalf("challenge game: %+v / %+v", ga.Game, gb.Game)
+	}
+
+	// The link is single-use.
+	c := dial(t, url)
+	c.hello("")
+	c.send(protocol.Inbound{Type: "peek", Code: code})
+	if e := c.expect("error", nil); e.Code != "challenge" {
+		t.Fatalf("reused link: %+v", e)
+	}
+}
+
+func TestChallengeRejections(t *testing.T) {
+	url := startServer(t, time.Minute)
+	a, b := dial(t, url), dial(t, url)
+	aTok := a.hello("")
+	b.hello("")
+
+	b.send(protocol.Inbound{Type: "peek", Code: "nope42"})
+	if e := b.expect("error", nil); e.Code != "challenge" || !strings.Contains(e.Message, "expired") {
+		t.Fatalf("unknown code: %+v", e)
+	}
+
+	a.send(protocol.Inbound{Type: "challenge", Name: "alice"})
+	code := a.expect("challenge", nil).Code
+	a.send(protocol.Inbound{Type: "peek", Code: code})
+	if e := a.expect("error", nil); !strings.Contains(e.Message, "your own") {
+		t.Fatalf("own link: %+v", e)
+	}
+
+	// The link outlives a dropped connection, but can't be accepted until
+	// its owner is back.
+	a.conn.Close(websocket.StatusNormalClosure, "")
+	time.Sleep(100 * time.Millisecond)
+	b.send(protocol.Inbound{Type: "accept", Code: code, Name: "bob"})
+	if e := b.expect("error", nil); !strings.Contains(e.Message, "isn't online") {
+		t.Fatalf("offline challenger: %+v", e)
+	}
+	a2 := dial(t, url)
+	a2.hello(aTok)
+	if got := a2.expect("challenge", nil).Code; got != code {
+		t.Fatalf("after reconnect got code %q, want %q", got, code)
+	}
+
+	a2.send(protocol.Inbound{Type: "cancel"})
+	a2.expect("lobby", nil)
+	b.send(protocol.Inbound{Type: "accept", Code: code, Name: "bob"})
+	if e := b.expect("error", nil); e.Code != "challenge" {
+		t.Fatalf("cancelled link: %+v", e)
+	}
+}

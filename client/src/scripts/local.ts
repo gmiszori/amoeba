@@ -1,3 +1,4 @@
+import { BOT_NAME, type Board } from "./bot";
 import type { Cell, GameState, Mark } from "./protocol";
 
 const WIN_LENGTH = 5;
@@ -9,17 +10,39 @@ const DIRECTIONS: Cell[] = [
 ];
 
 /**
- * A game for two players sharing one device. It never touches the server, so
- * the rules are repeated here: same as server/internal/game (X first, five or
- * more in a row wins), but without a turn clock.
+ * A game that never touches the server: either two players sharing one
+ * device, or one player against Amőbot. The rules are repeated here: same as
+ * server/internal/game (X first, five or more in a row wins), but without a
+ * turn clock.
  */
-export class LocalGame {
+export class LocalGame implements Board {
   readonly id = `local-${Date.now()}`;
+  readonly moves: Cell[] = [];
   private readonly cells = new Map<string, Mark>();
-  private readonly moves: Cell[] = [];
   private turn: Mark = "X";
   private winner: Mark | null = null;
   private line: Cell[] | null = null;
+
+  /**
+   * @param bot the mark Amőbot plays, or null for two players on this device
+   * @param playerName shown for the human player in a game against Amőbot
+   */
+  constructor(
+    readonly bot: Mark | null = null,
+    private readonly playerName = "",
+  ) {}
+
+  get over(): boolean {
+    return this.winner !== null;
+  }
+
+  get toMove(): Mark {
+    return this.turn;
+  }
+
+  at(cell: Cell): Mark | null {
+    return this.cells.get(key(cell)) ?? null;
+  }
 
   /** Places the current player's mark; returns false if the cell is taken or the game is over. */
   play(cell: Cell): boolean {
@@ -37,16 +60,18 @@ export class LocalGame {
   }
 
   /**
-   * The game as the online screens expect it. "you" is always the player to
-   * move, since both players are at this device.
+   * The game as the online screens expect it. On a shared device "you" is
+   * always the player to move, since both players are at this device.
    */
   state(): GameState {
+    const vsBot = this.bot !== null;
     return {
       type: "game",
       id: this.id,
-      you: this.turn,
-      yourName: "",
-      opponentName: "",
+      mode: vsBot ? "bot" : "local",
+      you: vsBot ? (this.bot === "X" ? "O" : "X") : this.turn,
+      yourName: vsBot ? this.playerName : "",
+      opponentName: vsBot ? BOT_NAME : "",
       opponentConnected: true,
       moves: this.moves,
       turn: this.turn,

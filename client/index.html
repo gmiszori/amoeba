@@ -1,21 +1,44 @@
 <!doctype html>
 <html lang="en">
   <head>
+    <!-- Caddy's templates fill in the site's own address (link previews need
+         absolute URLs); see the Caddyfiles. -->
+    {{$origin := print (placeholder "http.request.scheme") "://" (placeholder "http.request.hostport")}}
     <meta charset="utf-8" />
     <meta
       name="viewport"
       content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover"
     />
-    <meta name="description" content="Five in a row on an endless board. Play amőba with someone online." />
+    <title>amőba – five in a row online</title>
+    <meta name="description" content="Five in a row on an endless board. Play amőba online with a stranger, a friend or the computer." />
     <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)" />
     <meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)" />
-    <meta name="apple-mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-title" content="amőba" />
+
+    <!-- Link previews (Open Graph, also read by Messenger, WhatsApp, Slack,
+         Discord, iMessage) and X/Twitter cards. -->
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="amőba" />
+    <meta property="og:title" content="amőba – five in a row online" />
+    <meta property="og:description" content="Five in a row on an endless board. Play with a stranger, a friend or the computer. No sign-up." />
+    <meta property="og:url" content="{{$origin}}{{placeholder "http.request.orig_uri.path"}}" />
+    <meta property="og:image" content="{{$origin}}/og-image.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content="An amőba board where blue X has five in a row" />
+    <meta name="twitter:card" content="summary_large_image" />
+
+    <!-- Installable app (PWA). -->
+    <link rel="manifest" href="/manifest.webmanifest" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="amőba" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+
     <!-- build.mjs fills in the hashed bundle paths for the two tags below. -->
     <link rel="stylesheet" href="{{css}}" />
     <script type="module" src="{{js}}"></script>
-    <title>amőba</title>
   </head>
   <body>
     <!-- X and O, drawn with the same proportions as the board's canvas marks
@@ -29,15 +52,63 @@
       </symbol>
     </svg>
 
-    <section id="screen-lobby" class="screen centered">
-      <div class="card">
+    <section id="screen-lobby" class="screen home">
+      <!-- A finished game drawn faintly behind the menu; purely decorative. -->
+      <canvas id="backdrop" class="backdrop" aria-hidden="true"></canvas>
+      <div class="home-content">
         <div class="logo" aria-hidden="true">
           <svg class="mark-icon x"><use href="#mark-x" /></svg>
           <svg class="mark-icon o"><use href="#mark-o" /></svg>
         </div>
         <h1>amőba</h1>
         <p class="tagline">Five in a row on an endless board.</p>
-        <form id="join-form" novalidate>
+
+        <button id="play-online" type="button" class="primary big">
+          <svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.5v13l10-6.5z" /></svg>
+          Play online
+        </button>
+        <p class="online" data-min="1" hidden>
+          <span class="live-dot" aria-hidden="true"></span>
+          <strong class="online-count">0</strong> playing now
+        </p>
+
+        <div class="modes">
+          <button id="play-friend" type="button" class="mode">
+            <svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M10 14a4.5 4.5 0 0 0 6.4 0l3-3a4.5 4.5 0 0 0-6.4-6.4l-1 1" />
+              <path d="M14 10a4.5 4.5 0 0 0-6.4 0l-3 3a4.5 4.5 0 0 0 6.4 6.4l1-1" />
+            </svg>
+            <span>Challenge a friend</span>
+          </button>
+          <button id="play-bot" type="button" class="mode">
+            <svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true">
+              <rect x="5" y="8" width="14" height="11" rx="3" />
+              <path d="M12 4.5V8M9.5 13h.01M14.5 13h.01M9.5 16h5" />
+            </svg>
+            <span>Play Amőbot</span>
+          </button>
+          <button id="play-local" type="button" class="mode">
+            <svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true">
+              <rect x="6.5" y="3" width="11" height="18" rx="2.5" />
+              <path d="M10.5 17.5h3" />
+            </svg>
+            <span>Same device</span>
+          </button>
+        </div>
+
+        <p class="identity" hidden>
+          Playing as <strong id="identity-name"></strong> ·
+          <button id="change-name" type="button" class="link">change</button>
+        </p>
+        <button id="install" type="button" class="link install" hidden>Install the app</button>
+      </div>
+    </section>
+
+    <section id="screen-name" class="screen centered" hidden>
+      <form id="name-form" class="card" novalidate>
+        <h2>What should we call you?</h2>
+        <p class="muted">Your opponent sees this name.</p>
+        <div class="field">
           <label for="name">Username</label>
           <input
             id="name"
@@ -53,12 +124,10 @@
             required
           />
           <p id="name-error" class="field-error" role="alert"></p>
-          <button id="join" type="submit" class="primary">Enter matchmaking</button>
-        </form>
-        <div class="divider"><span>or</span></div>
-        <button id="local" type="button">Play on this device</button>
-        <p class="online" hidden>Players online: <strong class="online-count">0</strong></p>
-      </div>
+        </div>
+        <button id="name-continue" type="submit" class="primary">Continue</button>
+        <button id="name-back" type="button">Back</button>
+      </form>
     </section>
 
     <section id="screen-queue" class="screen centered" hidden>
@@ -68,10 +137,65 @@
           <svg class="mark-icon o"><use href="#mark-o" /></svg>
         </div>
         <h2>Looking for an opponent…</h2>
-        <p class="muted">Send the link to a friend to play together.</p>
+        <p id="queue-hint" class="muted">This usually takes a few seconds.</p>
+        <div id="bot-offer" class="bot-offer" hidden>
+          <p>No one else is around right now.</p>
+          <button id="queue-bot" type="button" class="primary">Play Amőbot instead</button>
+        </div>
         <button id="cancel" type="button">Cancel</button>
-        <p class="online" hidden>Players online: <strong class="online-count">0</strong></p>
+        <p class="online" data-min="2" hidden>
+          <span class="live-dot" aria-hidden="true"></span>
+          <strong class="online-count">0</strong> playing now
+        </p>
       </div>
+    </section>
+
+    <section id="screen-challenge" class="screen centered" hidden>
+      <div class="card">
+        <div class="spinner" aria-hidden="true">
+          <svg class="mark-icon x"><use href="#mark-x" /></svg>
+          <svg class="mark-icon o"><use href="#mark-o" /></svg>
+        </div>
+        <h2>Waiting for your friend…</h2>
+        <p class="muted">Send them this link. The game starts as soon as they accept.</p>
+        <div class="link-box">
+          <span id="challenge-link" class="link-text"></span>
+          <button id="copy-link" type="button" class="small">Copy</button>
+        </div>
+        <button id="share-link" type="button" class="primary" hidden>Share link</button>
+        <button id="challenge-cancel" type="button">Cancel</button>
+      </div>
+    </section>
+
+    <section id="screen-invite" class="screen centered" hidden>
+      <form id="invite-form" class="card" novalidate>
+        <div class="logo" aria-hidden="true">
+          <svg class="mark-icon x"><use href="#mark-x" /></svg>
+          <svg class="mark-icon o"><use href="#mark-o" /></svg>
+        </div>
+        <p class="eyebrow">amőba · five in a row</p>
+        <h2 id="invite-title">Opening the challenge…</h2>
+        <p class="muted">Get five in a row on an endless board before they do.</p>
+        <div class="field">
+          <label for="invite-name">Your name</label>
+          <input
+            id="invite-name"
+            name="name"
+            type="text"
+            maxlength="16"
+            autocomplete="nickname"
+            autocapitalize="off"
+            autocorrect="off"
+            spellcheck="false"
+            enterkeyhint="go"
+            placeholder="Your name"
+            required
+          />
+          <p id="invite-error" class="field-error" role="alert"></p>
+        </div>
+        <button id="invite-accept" type="submit" class="primary" disabled>Accept and play</button>
+        <button id="invite-decline" type="button">Not now</button>
+      </form>
     </section>
 
     <section id="screen-game" class="screen" hidden>

@@ -1,0 +1,6 @@
+<!-- App icon (PWA, Apple touch icon): the favicon's X and O, full bleed. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="512" height="512">
+  <rect width="64" height="64" fill="#f6f4ef"/>
+  <path d="M14 14l14 14M28 14L14 28" stroke="#2563eb" stroke-width="5.5" stroke-linecap="round"/>
+  <circle cx="43" cy="43" r="8" fill="none" stroke="#dc2626" stroke-width="5.5"/>
+</svg>

@@ -8,8 +8,10 @@
 		reverse_proxy server:8080
 	}
 
-	# esbuild dev server, including its live-reload event stream.
+	# esbuild dev server, including its live-reload event stream. templates
+	# fills in index.html's absolute URLs, as in production.
 	handle {
+		templates
 		reverse_proxy client:4321
 	}
 }

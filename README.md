@@ -14,13 +14,22 @@ direction.
 ## Features
 
 - **Online matchmaking.** Pick a username and you're paired with the next
-  player waiting. The home screen shows how many players are online.
+  player waiting. The home screen shows how many players are online. If no
+  one turns up within 5 seconds, you're offered a game against Amőbot.
+- **Challenge a friend.** Get a one-time link (`/c/<code>`) to send to a
+  friend. The game starts when they open it and accept.
+- **Amőbot.** A computer opponent that runs in the browser, so it works
+  offline too, with no turn clock. It blocks and finishes fours and open
+  threes, but looks only one move ahead, so a double threat beats it.
 - **Infinite board.** Pan and pinch-zoom freely. Blue ✕ always moves first,
   and five or more in a row (horizontal, vertical or diagonal) wins.
 - **Turn clock.** Each move has 30 seconds. If you run out, you lose.
 - **Mobile-first.** On touch screens, the first tap shows a dashed preview and
   a second tap places the mark, so you don't misplace moves on a phone.
-- **Same-device play.** "Play on this device" starts a local game for two
+- **Installable.** It's a PWA: add it to the home screen and it opens like an
+  app, offline too (same-device and Amőbot games). Shared links show a preview
+  card (Open Graph).
+- **Same-device play.** "Same device" starts a local game for two
   people sharing one screen. It needs no username, no timer and no server.
 - **Rematches and reconnects.** A dropped connection can rejoin with its
   session token and carry on.
@@ -58,8 +67,9 @@ Browser ─► [webserver proxy :80/:443] ─► [web: Caddy, automatic HTTPS] �
 
 | Directory | What |
 |-----------|------|
-| `server/` | Go WebSocket server: sessions, matchmaking queue, game rules, turn clock. All state is in memory, and the server is authoritative. |
-| `client/` | Plain `index.html` + CSS + TypeScript (canvas game), bundled by esbuild (`build.mjs`). `tsc` only type-checks. Also holds the `Caddyfile`; the production image is Caddy serving the build. |
+| `server/` | Go WebSocket server: sessions, matchmaking queue, challenge links, game rules, turn clock. All state is in memory, and the server is authoritative. |
+| `client/` | Plain `index.html` + CSS + TypeScript (canvas game), bundled by esbuild (`build.mjs`), plus the service worker (`sw.js`). Amőbot lives in `src/scripts/bot.ts`; `npm test` runs its tests. `tsc` only type-checks. Also holds the `Caddyfile`; the production image is Caddy serving the build. |
+| `client/art/` | Sources for the app icons and the link preview image. `client/art/render.sh` renders them into `client/public/` with a headless Chrome, Brave or Chromium. |
 | `docs/protocol.md` | The WebSocket message protocol. |
 
 The bad-word list is plain text in `server/internal/hub/badwords.txt`. Add

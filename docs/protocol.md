@@ -14,7 +14,10 @@ decides the winner. Clients only send intentions.
 |-----------|-----------------|---------|
 | `hello`   | `token?`        | First message on every connection. Send the stored token to resume a session; omit it to get a new one. |
 | `join`    | `name`          | Enter matchmaking with this username (1–16 chars: letters, digits, spaces, `_ - .`). Also leaves a finished game. |
-| `cancel`  |                 | Leave the matchmaking queue. |
+| `challenge` | `name`        | Create a challenge link for a friend (answered with `challenge`). Asking again while waiting returns the same code. |
+| `peek`    | `code`          | Look up a challenge code from a `/c/<code>` link (answered with `invite`). |
+| `accept`  | `code`, `name`  | Accept a challenge: starts a game with whoever created it. |
+| `cancel`  |                 | Leave the matchmaking queue, or withdraw your challenge link. |
 | `move`    | `x`, `y`        | Place your mark at cell (x, y). Integers, \|x\|,\|y\| ≤ 1,000,000. |
 | `rematch` |                 | Ask for (or accept) a rematch after a game ends. Colours swap. |
 | `leave`   |                 | Back to the lobby. Resigns a running game. |
@@ -26,8 +29,10 @@ decides the winner. Clients only send intentions.
 | `welcome` | `token`, `name` | Reply to `hello`. Store the token (local storage). |
 | `lobby`   |        | Not queued, not in a game. |
 | `queued`  |        | Waiting for an opponent. |
+| `challenge` | `code` | Waiting for a friend to open `/c/<code>`. Also sent on reconnect while the link is still open. |
+| `invite`  | `code`, `name` | Reply to `peek`: `name` is challenging you. |
 | `game`    | see below | Full state of your current match. Sent whenever it changes. |
-| `error`   | `code?`, `message` | A request was rejected. `code` is `name` when the username was invalid or blocked (see `server/internal/hub/badwords.txt`); the player is back in the lobby. |
+| `error`   | `code?`, `message` | A request was rejected. `code` is `name` when the username was invalid or blocked (see `server/internal/hub/badwords.txt`); the player is back in the lobby. `code` is `challenge` when a challenge link can't be used (expired, your own, or its owner is offline). |
 | `kicked`  |        | The same session connected from elsewhere; this connection closes. Don't reconnect automatically. |
 | `stats`   | `online` | Number of players in running games or waiting in the queue. Sent with `lobby`/`queued` and again (at most once a second) whenever it changes, to players not in a game. |
 
@@ -37,6 +42,7 @@ decides the winner. Clients only send intentions.
 {
   "type": "game",
   "id": "4f1c…",
+  "mode": "random",
   "you": "X",
   "yourName": "Gergő",
   "opponentName": "Bob",
@@ -54,6 +60,9 @@ decides the winner. Clients only send intentions.
 }
 ```
 
+- `mode` is `random` (paired from the queue) or `friend` (from a challenge
+  link). Games against Amőbot run entirely in the browser and never reach
+  the server.
 - `moves` are in play order; even indexes are X, odd are O. X (blue) always
   moves first.
 - `remainingMs` is the time left in the current turn when the message was
@@ -73,5 +82,8 @@ decides the winner. Clients only send intentions.
   `rematch.you` stays set, so the client can say "rematch cancelled".
 - A player in the queue who disconnects is removed from it (the client rejoins
   automatically on reconnect).
+- A challenge link is single-use. It survives its owner's brief disconnects
+  (it can't be accepted while they're away) and lasts until they start any
+  game, cancel, or have been gone for 10 minutes.
 - The server pings every 25 s to keep idle connections alive through
   proxies and mobile NATs.

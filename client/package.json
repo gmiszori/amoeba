@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "check": "tsc --noEmit",
+    "test": "node --test 'test/*.test.ts'",
     "build": "tsc --noEmit && node build.mjs",
     "dev": "node build.mjs --dev"
   },
