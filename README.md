@@ -1,7 +1,8 @@
 # amőba
 
 Online five-in-a-row on an infinite board. *Amőba* is the Hungarian name for
-the game also known as gomoku.
+the game also known as gomoku. The code was written with AI under my
+direction.
 
 ![Two phones playing an online game of amőba: Anna places five X marks in a row and wins](docs/images/demo.gif)
 
