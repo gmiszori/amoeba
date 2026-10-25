@@ -1,6 +1,7 @@
 // Package game implements the rules of amőba: two to four players take turns
 // placing marks on an unbounded grid, and the first to get five or more in a
-// row (horizontally, vertically or diagonally) wins. A player who resigns or
+// row (horizontally, vertically or diagonally) wins. Every mark after the
+// first goes within MaxReach cells of another one. A player who resigns or
 // runs out of time drops out: their marks stay on the board, their turns are
 // skipped, and the last player left wins.
 package game
@@ -16,6 +17,10 @@ const WinLength = 5
 // MaxMoves caps the size of a game so it can't grow without bound. A game
 // that reaches it ends in a draw; real games end long before this.
 const MaxMoves = 2000
+
+// MaxReach is how far a new mark may be from the nearest existing one,
+// counting diagonal steps as one, so play stays in one place.
+const MaxReach = 5
 
 // MaxPlayers is the largest number of players in one game.
 const MaxPlayers = 4
@@ -72,6 +77,7 @@ var (
 	ErrGameOver    = errors.New("the game is over")
 	ErrNotYourTurn = errors.New("it is not your turn")
 	ErrOccupied    = errors.New("that cell is already taken")
+	ErrTooFar      = fmt.Errorf("place your mark within %d cells of another mark", MaxReach)
 )
 
 // Game is a single match. The board is stored sparsely, so its size only
@@ -126,6 +132,9 @@ func (g *Game) Play(m Mark, p Point) error {
 	if g.cells[p] != None {
 		return ErrOccupied
 	}
+	if len(g.moves) > 0 && !g.near(p) {
+		return ErrTooFar
+	}
 	g.cells[p] = m
 	g.moves = append(g.moves, Move{p, m})
 	switch line := g.lineThrough(p); {
@@ -151,6 +160,18 @@ func (g *Game) Forfeit(m Mark, reason Reason) {
 	} else if g.turn == m {
 		g.turn = next
 	}
+}
+
+// near reports whether a mark lies within MaxReach cells of p.
+func (g *Game) near(p Point) bool {
+	for dx := -MaxReach; dx <= MaxReach; dx++ {
+		for dy := -MaxReach; dy <= MaxReach; dy++ {
+			if g.cells[Point{p.X + dx, p.Y + dy}] != None {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // next returns the first player after m who is still in the game.

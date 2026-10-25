@@ -31,6 +31,7 @@ export interface GameState {
   winner?: Mark; // missing after a draw
   reason?: "five" | "timeout" | "resign" | "draw";
   line?: Cell[];
+  room?: string; // group games: the room's code while it's open to go back to
 }
 
 /** The waiting room of a multiplayer game. */
@@ -66,12 +67,26 @@ export type ClientMessage =
   | { type: "peekRoom"; code: string }
   | { type: "enter"; code: string; name: string }
   | { type: "start" }
+  | { type: "toRoom" }
   | { type: "cancel" }
   | { type: "move"; x: number; y: number }
   | { type: "rematch" }
   | { type: "leave" };
 
 export const MAX_NAME_LENGTH = 16;
+
+/** How far a new mark may be from the nearest one; same as game.MaxReach. */
+export const MAX_REACH = 5;
+
+/** Whether cell is within MAX_REACH cells of a mark, by the given lookup. */
+export function inReach([x, y]: Cell, taken: (cell: Cell) => boolean): boolean {
+  for (let dx = -MAX_REACH; dx <= MAX_REACH; dx++) {
+    for (let dy = -MAX_REACH; dy <= MAX_REACH; dy++) {
+      if (taken([x + dx, y + dy])) return true;
+    }
+  }
+  return false;
+}
 
 const NAME_CHARS = /^[\p{L}\p{M}\p{Nd} _.\-]+$/u;
 

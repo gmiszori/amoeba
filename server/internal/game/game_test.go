@@ -45,7 +45,8 @@ func TestWinDirections(t *testing.T) {
 	for name, xs := range cases {
 		t.Run(name, func(t *testing.T) {
 			g := New(2)
-			play(t, g, interleave(xs, row(100, 100, 0, 1, 4))...)
+			// O plays a column two cells left of X's first mark.
+			play(t, g, interleave(xs, row(xs[0].X-2, xs[0].Y, 0, 1, 4))...)
 			if !g.Over() || g.Winner() != X || g.Reason() != Five {
 				t.Fatalf("over=%v winner=%v reason=%v, want X to win by five", g.Over(), g.Winner(), g.Reason())
 			}
@@ -67,7 +68,7 @@ func TestFourDoesNotWin(t *testing.T) {
 func TestOverlineWins(t *testing.T) {
 	// X builds XXX_XX, then fills the gap to make six.
 	xs := []Point{{0, 0}, {1, 0}, {2, 0}, {4, 0}, {5, 0}, {3, 0}}
-	os := row(0, 9, 3, 0, 5) // spread out so O never wins
+	os := row(0, 3, 3, 0, 5) // spread out so O never wins
 	g := New(2)
 	play(t, g, interleave(xs, os)...)
 	if g.Winner() != X {
@@ -80,7 +81,7 @@ func TestOverlineWins(t *testing.T) {
 
 func TestOWins(t *testing.T) {
 	g := New(2)
-	play(t, g, interleave(row(0, 9, 3, 0, 5), row(0, 0, 0, 1, 5))...)
+	play(t, g, interleave(row(3, 0, 3, 0, 5), row(0, 0, 0, 1, 5))...)
 	if g.Winner() != O {
 		t.Fatalf("winner %v, want O", g.Winner())
 	}
@@ -111,8 +112,8 @@ func TestRuleErrors(t *testing.T) {
 func TestMoveLimitDraws(t *testing.T) {
 	g := New(2)
 	for i := range MaxMoves {
-		// Spread out so nobody ever gets five in a row.
-		p := Point{(i / 2) * 2, (i % 2) * 50}
+		// Every other cell of two rows apart, so nobody ever gets five in a row.
+		p := Point{(i / 2) * 2, (i % 2) * 5}
 		if err := g.Play(g.Turn(), p); err != nil {
 			t.Fatalf("move %d: %v", i, err)
 		}
@@ -122,6 +123,20 @@ func TestMoveLimitDraws(t *testing.T) {
 	}
 	if err := g.Play(g.Turn(), Point{-1, -1}); !errors.Is(err, ErrGameOver) {
 		t.Fatalf("move past the limit: got %v", err)
+	}
+}
+
+func TestMarksStayNearEachOther(t *testing.T) {
+	g := New(2)
+	play(t, g, Point{100, 100}) // the first mark goes anywhere
+	if err := g.Play(O, Point{106, 100}); !errors.Is(err, ErrTooFar) {
+		t.Fatalf("six cells away: got %v", err)
+	}
+	if err := g.Play(O, Point{95, 95}); err != nil {
+		t.Fatalf("five cells away diagonally: %v", err)
+	}
+	if err := g.Play(X, Point{100, 89}); !errors.Is(err, ErrTooFar) {
+		t.Fatalf("six cells from the nearest mark: got %v", err)
 	}
 }
 
@@ -143,7 +158,7 @@ func TestFourPlayersTakeTurns(t *testing.T) {
 func TestThirdPlayerWins(t *testing.T) {
 	g := New(3)
 	for i := range 5 {
-		play(t, g, Point{i * 2, 10}, Point{i * 2, 20}, Point{i, 0}) // X and O spread out
+		play(t, g, Point{i * 2, 2}, Point{i * 2, 4}, Point{i, 0}) // X and O spread out
 		if g.Over() {
 			if i != 4 || g.Winner() != T || g.Reason() != Five {
 				t.Fatalf("after round %d: winner=%v reason=%v, want T by five in round 4", i, g.Winner(), g.Reason())

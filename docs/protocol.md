@@ -21,9 +21,10 @@ decides the winner. Clients only send intentions.
 | `peekRoom` | `code`         | Look up a group game from a `/r/<code>` link (answered with `roomInvite`). |
 | `enter`   | `code`, `name`  | Join a group game's waiting room. The game starts by itself when the 4th player enters. |
 | `start`   |                 | Host only: start the group game with the players in the room (at least 3). |
+| `toRoom`  |                 | After a group game: go back to its room for the next game. |
 | `cancel`  |                 | Leave the matchmaking queue or a group game's waiting room, or withdraw your challenge link. When the host leaves, the room closes. |
-| `move`    | `x`, `y`        | Place your mark at cell (x, y). Integers, \|x\|,\|y\| ≤ 1,000,000. |
-| `rematch` |                 | Ask for (or accept) a rematch after a game ends. Colours swap. |
+| `move`    | `x`, `y`        | Place your mark at cell (x, y). Integers, \|x\|,\|y\| ≤ 1,000,000, and within 5 cells of an existing mark. |
+| `rematch` |                 | Ask for (or accept) a rematch after a two-player game ends. Colours swap. |
 | `leave`   |                 | Back to the lobby. Resigns a running game (with 3 or more players, the others play on). |
 
 ## Server → client
@@ -38,7 +39,7 @@ decides the winner. Clients only send intentions.
 | `room`    | `code`, `players`, `you`, `max`, `min` | You're in a group game's waiting room. `players` is `[{name, connected}]` in joining order, the first is the host; `you` indexes it. Sent whenever the room changes and on reconnect. |
 | `roomInvite` | `code`, `players`, `max` | Reply to `peekRoom`: the names of the players already in the room, host first. |
 | `game`    | see below | Full state of your current match. Sent whenever it changes. |
-| `error`   | `code?`, `message` | A request was rejected. `code` is `name` when the username was invalid or blocked (see `server/internal/hub/badwords.txt`); the player is back in the lobby. `code` is `challenge` when a challenge link can't be used (expired, your own, or its owner is offline), and `room` when a group game link can't be used (started, closed or full) or the host closed the room you were in. |
+| `error`   | `code?`, `message` | A request was rejected. `code` is `name` when the username was invalid or blocked (see `server/internal/hub/badwords.txt`); the player is back in the lobby. `code` is `challenge` when a challenge link can't be used (expired, your own, or its owner is offline), and `room` when a group game link can't be used (game in progress, closed or full) or the host closed the room you were in. |
 | `kicked`  |        | The same session connected from elsewhere; this connection closes. Don't reconnect automatically. |
 | `stats`   | `online` | Number of players in running games or waiting in the queue. Sent with `lobby`/`queued` and again (at most once a second) whenever it changes, to players not in a game. |
 
@@ -79,10 +80,14 @@ decides the winner. Clients only send intentions.
 - `winner`, `reason` (`five` | `timeout` | `resign` | `draw`) and `line`
   appear only when `over` is true. `winner` is missing after a draw. `line`
   is only set for `five` and may be longer than 5.
+- `room` is set after a group game while you can go back to its room
+  (`toRoom`); it disappears once the host has left.
 
 ## Rules and timing
 
 - Five or more in a row (horizontal, vertical, diagonal) wins.
+- Every mark after the first must be within 5 cells (in any direction,
+  diagonals included) of an existing mark, so play stays in one place.
 - Each turn lasts `TURN_SECONDS` (default 30). Running out of time loses.
 - With 3 or 4 players, a player who runs out of time or leaves drops out:
   their marks stay on the board, their turns are skipped, and the last
@@ -92,16 +97,19 @@ decides the winner. Clients only send intentions.
   of their turn to reconnect with their token and carry on.
 - After a game ends, a player who leaves (back to the lobby or matchmaking,
   or disconnects and doesn't return within 3 s) is gone for good: the others
-  see them with `left: true`. A rematch starts once everyone who stayed has
-  asked for one, with the seats rotated so the next player moves first. It
-  needs at least 2 players (3 in a group game). Your own `rematch` stays set,
-  so the client can say "rematch cancelled".
+  see them with `left: true`. In a two-player game a rematch starts once
+  both have asked for one, with colours swapped. Your own `rematch` stays
+  set, so the client can say "rematch cancelled".
 - A player in the queue who disconnects is removed from it (the client rejoins
   automatically on reconnect).
 - A group game's room waits for its host through brief disconnects, and
-  closes when the host leaves or has been gone for 10 minutes. A guest who
-  disconnects is taken out of the room; the client enters again on
-  reconnect. The room closes once its game starts.
+  closes when the host leaves (the room, or a game started from it) or has
+  been gone for 10 minutes. A guest who disconnects is taken out of the
+  room; the client enters again on reconnect.
+- The room stays while its game runs, but nobody new can enter. When the
+  game ends, the host is back in the room and the others return with
+  `toRoom`. Seats of players who don't come back are free for newcomers with
+  the same link, and the host starts the next game (seats are drawn again).
 - A challenge link is single-use. It survives its owner's brief disconnects
   (it can't be accepted while they're away) and lasts until they start any
   game, cancel, or have been gone for 10 minutes.

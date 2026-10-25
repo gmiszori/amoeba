@@ -7,6 +7,8 @@ import { LocalGame } from "./local";
 // Dev builds reload the page whenever esbuild rebuilds (see build.mjs).
 if (DEV) new EventSource("/esbuild").addEventListener("change", () => location.reload());
 import {
+  inReach,
+  MAX_REACH,
   normalizeName,
   type Cell,
   type GameState,
@@ -151,6 +153,9 @@ const TITLE = document.title;
 const key = ([x, y]: readonly number[]) => `${x},${y}`;
 const me = (g: GameState) => g.players[g.you];
 const myTurn = () => !!game && !game.over && game.turn === me(game).mark;
+/** Whether the player may put a mark on cell: empty and near the others. */
+const playable = (cell: Cell) =>
+  !occupied.has(key(cell)) && (occupied.size === 0 || inReach(cell, (c) => occupied.has(key(c))));
 const savedName = () => normalizeName(store.get(NAME_KEY) ?? "");
 
 function parseInvite(path: string): { kind: "challenge" | "room"; code: string } | null {
@@ -617,6 +622,10 @@ function sendMove(cell: Cell): void {
 
 board.onTap = (cell, pointerType) => {
   if (!game || !myTurn() || occupied.has(key(cell))) return;
+  if (!playable(cell)) {
+    toast(`Place your mark within ${MAX_REACH} cells of another mark.`);
+    return;
+  }
   // Mouse clicks are precise: place at once. Touch places on the second tap,
   // the first one only shows a dashed preview.
   if (pointerType === "mouse" || (preview && key(preview) === key(cell))) {
@@ -629,7 +638,7 @@ board.onTap = (cell, pointerType) => {
 
 board.onHover = (cell) => {
   if (!game) return;
-  board.setPreview(cell && myTurn() && !occupied.has(key(cell)) ? cell : null, me(game).mark);
+  board.setPreview(cell && myTurn() && playable(cell) ? cell : null, me(game).mark);
 };
 
 ui.recenter.addEventListener("click", () => board.recenter());
@@ -651,6 +660,7 @@ ui.rematch.addEventListener("click", () => {
   // Against Amőbot, colours swap like an online rematch.
   if (local?.bot) startBot(local.bot === "X" ? "O" : "X");
   else if (local) startLocal();
+  else if (game?.mode === "room") conn.send({ type: "toRoom" });
   else conn.send({ type: "rematch" });
 });
 
@@ -735,30 +745,35 @@ function renderHud(): void {
   ui.resultTitle.className = g.winner?.toLowerCase() ?? "";
   ui.resultDetail.textContent = resultDetail(g, winner, duel);
 
-  // A rematch needs everyone who stayed, and enough of them: once too many
-  // have gone, blur the button and, if we'd already asked, say it's off.
-  const stayed = g.players.filter((p) => !p.left);
-  const gone = opponents.filter((p) => p.left).map(name);
-  const possible = stayed.length >= (g.mode === "room" ? 3 : 2);
-  const waitingFor = stayed.filter((p) => !p.rematch).map(name);
-  const asking = opponents.filter((p) => p.rematch && !p.left).map(name);
-  ui.rematch.disabled = !possible || self.rematch;
-  ui.rematch.classList.toggle("blurred", !possible);
+  if (g.mode === "room") {
+    // No rematch in a group game: everyone goes back to the room, where the
+    // host starts the next one. It's gone once the host has left.
+    ui.rematch.disabled = !g.room;
+    ui.rematch.classList.toggle("blurred", !g.room);
+    ui.rematch.textContent = "Back to the room";
+    ui.resultNote.hidden = !!g.room;
+    ui.resultNote.textContent = "The host has closed the room.";
+    return;
+  }
+
+  // Once the opponent has gone there's no rematch: blur the button and, if
+  // we'd already asked for one, say it's off.
+  const opponent = opponents[0];
+  ui.rematch.disabled = opponent.left || self.rematch;
+  ui.rematch.classList.toggle("blurred", opponent.left);
   ui.rematch.textContent = bot
     ? "Play again"
-    : !possible
+    : opponent.left
       ? "Rematch"
       : self.rematch
-        ? `Waiting for ${listNames(waitingFor)}…`
-        : asking.length
-          ? `${listNames(asking)} ${asking.length > 1 ? "want" : "wants"} a rematch – accept`
+        ? `Waiting for ${name(opponent)}…`
+        : opponent.rematch
+          ? `${name(opponent)} wants a rematch – accept`
           : "Rematch";
-  ui.resultNote.hidden = !gone.length;
-  ui.resultNote.textContent = possible
-    ? `${listNames(gone)} left.`
-    : self.rematch
-      ? `Rematch cancelled – ${listNames(gone)} left.`
-      : `${listNames(gone)} left – no rematch.`;
+  ui.resultNote.hidden = !opponent.left;
+  ui.resultNote.textContent = self.rematch
+    ? `Rematch cancelled – ${name(opponent)} left.`
+    : `${name(opponent)} left – no rematch.`;
 }
 
 /** "Anna", "Anna and Bence", "Anna, Bence and Csaba". */

@@ -1,5 +1,5 @@
 import { BOT_NAME, type Board } from "./bot";
-import type { Cell, GameState, Mark } from "./protocol";
+import { inReach, type Cell, type GameState, type Mark } from "./protocol";
 
 const WIN_LENGTH = 5;
 const DIRECTIONS: Cell[] = [
@@ -12,8 +12,8 @@ const DIRECTIONS: Cell[] = [
 /**
  * A game that never touches the server: either two players sharing one
  * device, or one player against Amőbot. The rules are repeated here: same as
- * server/internal/game (X first, five or more in a row wins), but without a
- * turn clock.
+ * server/internal/game (X first, five or more in a row wins, marks within
+ * MAX_REACH of each other), but without a turn clock.
  */
 export class LocalGame implements Board {
   readonly id = `local-${Date.now()}`;
@@ -44,9 +44,10 @@ export class LocalGame implements Board {
     return this.cells.get(key(cell)) ?? null;
   }
 
-  /** Places the current player's mark; returns false if the cell is taken or the game is over. */
+  /** Places the current player's mark; returns false if the cell can't be played or the game is over. */
   play(cell: Cell): boolean {
     if (this.winner || this.cells.has(key(cell))) return false;
+    if (this.moves.length > 0 && !inReach(cell, (c) => this.cells.has(key(c)))) return false;
     this.cells.set(key(cell), this.turn);
     this.moves.push(cell);
     const line = this.lineThrough(cell);

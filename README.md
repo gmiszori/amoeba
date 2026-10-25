@@ -22,12 +22,14 @@ direction.
   (`/r/<code>`) and starts once 3 players are in; with 4 it starts by
   itself. The players get ✕, ◯, a green △ and an amber □. A player who runs
   out of time or leaves drops out, their marks stay on the board, and the
-  last player left wins.
+  last player left wins. Afterwards everyone goes back to the room for the
+  next game, and newcomers can take free seats with the same link.
 - **Amőbot.** A computer opponent that runs in the browser, so it works
   offline too, with no turn clock. It blocks and finishes fours and open
   threes, but looks only one move ahead, so a double threat beats it.
 - **Infinite board.** Pan and pinch-zoom freely. Blue ✕ always moves first,
-  and five or more in a row (horizontal, vertical or diagonal) wins.
+  and five or more in a row (horizontal, vertical or diagonal) wins. Each
+  mark goes within 5 cells of another, so the game stays in one place.
 - **Turn clock.** Each move has 30 seconds. If you run out, you lose.
 - **Mobile-first.** On touch screens, the first tap shows a dashed preview and
   a second tap places the mark, so you don't misplace moves on a phone.

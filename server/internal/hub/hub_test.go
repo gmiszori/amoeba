@@ -532,6 +532,14 @@ func TestRoomGame(t *testing.T) {
 	host.send(protocol.Inbound{Type: "start"})
 	seats := bySeat(t, append(cs, peeker))
 
+	// Nobody new gets in while the game runs.
+	late := dial(t, url)
+	late.hello("")
+	late.send(protocol.Inbound{Type: "peekRoom", Code: code})
+	if e := late.expect("error", nil); e.Code != "room" || !strings.Contains(e.Message, "in progress") {
+		t.Fatalf("room during a game: %+v", e)
+	}
+
 	// Nobody moves: X and then O run out of time and drop out, and the
 	// third player is the last one left.
 	g := seats[2].expect("game", func(m message) bool { return m.Players[0].Out != "" })
@@ -539,25 +547,57 @@ func TestRoomGame(t *testing.T) {
 		t.Fatalf("after X timed out: %+v", g.Game)
 	}
 	g = seats[2].expect("game", func(m message) bool { return m.Over })
-	if g.Winner != "T" || g.Reason != "timeout" {
+	if g.Winner != "T" || g.Reason != "timeout" || g.Room != code {
 		t.Fatalf("game over: %+v", g.Game)
 	}
 
-	// The room is gone once the game starts.
-	late := dial(t, url)
-	late.hello("")
-	late.send(protocol.Inbound{Type: "peekRoom", Code: code})
-	if e := late.expect("error", nil); e.Code != "room" {
-		t.Fatalf("started room: %+v", e)
-	}
-
-	// A rematch needs everyone and moves the first seat to the end.
-	for _, c := range seats {
+	// No rematch in a group game: the players go back to the room, where a
+	// newcomer can take the free seat.
+	for _, c := range seats[:2] {
 		c.expect("game", func(m message) bool { return m.Over })
-		c.send(protocol.Inbound{Type: "rematch"})
 	}
-	if r := seats[1].expect("game", func(m message) bool { return m.ID != g.ID }); r.You != 0 {
-		t.Fatalf("rematch: old O got seat %d, want 0", r.You)
+	seats[0].send(protocol.Inbound{Type: "rematch"})
+	seats[0].expect("error", nil)
+	guest := seats[0]
+	if guest == host {
+		guest = seats[1]
+	}
+	guest.send(protocol.Inbound{Type: "toRoom"})
+	r := guest.expect("room", nil)
+	if len(r.Players) != 2 || r.Players[0].Name != "host" || r.You != 1 {
+		t.Fatalf("back in the room: %+v", r)
+	}
+	late.send(protocol.Inbound{Type: "enter", Code: code, Name: "dave"})
+	late.expect("room", func(m message) bool { return len(m.Players) == 3 })
+	host.send(protocol.Inbound{Type: "toRoom"})
+	host.expect("room", func(m message) bool { return len(m.Players) == 3 && m.You == 0 })
+	host.send(protocol.Inbound{Type: "start"})
+	next := late.expect("game", nil)
+	if next.ID == g.ID || len(next.Players) != 3 || next.Room != "" {
+		t.Fatalf("next game: %+v", next.Game)
+	}
+}
+
+func TestRoomClosesWhenHostLeavesAfterGame(t *testing.T) {
+	url := startServer(t, 150*time.Millisecond)
+	cs, code := openRoom(t, url, "bob", "carol")
+	cs[0].expect("room", func(m message) bool { return len(m.Players) == 3 })
+	cs[0].send(protocol.Inbound{Type: "start"})
+	for _, c := range cs {
+		c.expect("game", func(m message) bool { return m.Over && m.Room == code })
+	}
+	cs[1].send(protocol.Inbound{Type: "toRoom"})
+	cs[1].expect("room", nil)
+
+	cs[0].send(protocol.Inbound{Type: "leave"}) // the host goes back to the menu
+	if e := cs[1].expect("error", nil); e.Code != "room" || !strings.Contains(e.Message, "closed") {
+		t.Fatalf("waiting guest: %+v", e)
+	}
+	cs[1].expect("lobby", nil)
+	cs[2].expect("game", func(m message) bool { return m.Room == "" })
+	cs[2].send(protocol.Inbound{Type: "toRoom"})
+	if e := cs[2].expect("error", nil); e.Code != "room" {
+		t.Fatalf("guest still on the result: %+v", e)
 	}
 }
 

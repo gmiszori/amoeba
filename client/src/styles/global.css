@@ -196,8 +196,9 @@ p {
 .spinner .mark-icon {
   animation: bob 1.1s ease-in-out infinite;
 }
-.spinner .mark-icon:last-child {
-  animation-delay: 0.55s;
+/* Every other mark is half a bounce behind: one up, the next down. */
+.spinner .mark-icon:nth-child(even) {
+  animation-delay: -0.55s;
 }
 @keyframes bob {
   50% {

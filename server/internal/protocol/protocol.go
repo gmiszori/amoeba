@@ -4,7 +4,7 @@ package protocol
 
 // Inbound is any message sent by a client. Which fields are used depends on Type.
 type Inbound struct {
-	Type  string `json:"type"`            // hello | join | challenge | peek | accept | room | peekRoom | enter | start | cancel | move | rematch | leave
+	Type  string `json:"type"`            // hello | join | challenge | peek | accept | room | peekRoom | enter | start | toRoom | cancel | move | rematch | leave
 	Token string `json:"token,omitempty"` // hello
 	Name  string `json:"name,omitempty"`  // join, challenge, accept, room, enter
 	Code  string `json:"code,omitempty"`  // peek, accept, peekRoom, enter
@@ -106,4 +106,5 @@ type Game struct {
 	Winner      string   `json:"winner,omitempty"` // mark; empty after a draw
 	Reason      string   `json:"reason,omitempty"` // five | timeout | resign | draw
 	Line        []Cell   `json:"line,omitempty"`
+	Room        string   `json:"room,omitempty"` // group games: the room's code while it's open to go back to
 }
