@@ -20,7 +20,7 @@ export interface GameState {
   type: "game";
   id: string;
   // "bot" and "local" games never touch the server, see local.ts.
-  mode: "random" | "friend" | "room" | "bot" | "local";
+  mode: "random" | "room" | "bot" | "local";
   you: number; // your seat: index into players
   players: Player[];
   moves: Move[]; // in play order
@@ -31,38 +31,36 @@ export interface GameState {
   winner?: Mark; // missing after a draw
   reason?: "five" | "timeout" | "resign" | "draw";
   line?: Cell[];
-  room?: string; // group games: the room's code while it's open to go back to
+  room?: string; // games with friends: the room's code while you can go back to it
 }
 
-/** The waiting room of a multiplayer game. */
+/** A room for playing with friends. */
 export interface RoomState {
   type: "room";
   code: string;
-  players: { name: string; connected: boolean }[]; // in joining order; the first is the host
+  host: string; // the host's name; they may still be in the last game
+  players: { name: string; connected: boolean; host: boolean }[]; // waiting for the next game
   you: number;
   max: number;
   min: number; // players needed before the host can start
+  playing: boolean; // a game is in progress; players join the next one
 }
 
 export type ServerMessage =
   | { type: "welcome"; token: string; name: string }
   | { type: "lobby" }
   | { type: "queued" }
-  | { type: "challenge"; code: string } // waiting for a friend to open the link
-  | { type: "invite"; code: string; name: string } // reply to peek
-  | { type: "roomInvite"; code: string; players: string[]; max: number } // reply to peekRoom
+  // Reply to peekRoom: who is waiting in the room, and whether a game is on.
+  | { type: "roomInvite"; code: string; host: string; players: string[]; max: number; playing: boolean }
   | { type: "kicked" }
   | { type: "stats"; online: number } // players in a game or the queue
-  | { type: "error"; code?: "name" | "challenge" | "room"; message: string }
+  | { type: "error"; code?: "name" | "room"; message: string }
   | RoomState
   | GameState;
 
 export type ClientMessage =
   | { type: "hello"; token?: string }
   | { type: "join"; name: string }
-  | { type: "challenge"; name: string }
-  | { type: "peek"; code: string }
-  | { type: "accept"; code: string; name: string }
   | { type: "room"; name: string }
   | { type: "peekRoom"; code: string }
   | { type: "enter"; code: string; name: string }

@@ -10,7 +10,7 @@
       content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover"
     />
     <title>amőba – five in a row online</title>
-    <meta name="description" content="Five in a row on an endless board. Play amőba online with a stranger, a friend or the computer." />
+    <meta name="description" content="Five in a row on an endless board. Play amőba online with a stranger, friends or the computer." />
     <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)" />
     <meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)" />
 
@@ -19,7 +19,7 @@
     <meta property="og:type" content="website" />
     <meta property="og:site_name" content="amőba" />
     <meta property="og:title" content="amőba – five in a row online" />
-    <meta property="og:description" content="Five in a row on an endless board. Play with a stranger, a friend or the computer. No sign-up." />
+    <meta property="og:description" content="Five in a row on an endless board. Play with a stranger, friends or the computer. No sign-up." />
     <meta property="og:url" content="{{$origin}}{{placeholder "http.request.orig_uri.path"}}" />
     <meta property="og:image" content="{{$origin}}/og-image.png" />
     <meta property="og:image:width" content="1200" />
@@ -80,21 +80,14 @@
         </p>
 
         <div class="modes">
-          <button id="play-friend" type="button" class="mode">
-            <svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true">
-              <path d="M10 14a4.5 4.5 0 0 0 6.4 0l3-3a4.5 4.5 0 0 0-6.4-6.4l-1 1" />
-              <path d="M14 10a4.5 4.5 0 0 0-6.4 0l-3 3a4.5 4.5 0 0 0 6.4 6.4l1-1" />
-            </svg>
-            <span>Challenge a friend</span>
-          </button>
-          <button id="play-room" type="button" class="mode">
+          <button id="play-friends" type="button" class="mode">
             <svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true">
               <circle cx="9" cy="8.5" r="3" />
               <path d="M3.5 19a5.5 5.5 0 0 1 11 0" />
               <circle cx="16.5" cy="9.5" r="2.5" />
               <path d="M16 14.6a4.5 4.5 0 0 1 5 4.4" />
             </svg>
-            <span>Group game (3–4)</span>
+            <span>Play with friends</span>
           </button>
           <button id="play-bot" type="button" class="mode">
             <svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true">
@@ -166,23 +159,6 @@
       </div>
     </section>
 
-    <section id="screen-challenge" class="screen centered" hidden>
-      <div class="card">
-        <div class="spinner" aria-hidden="true">
-          <svg class="mark-icon x"><use href="#mark-x" /></svg>
-          <svg class="mark-icon o"><use href="#mark-o" /></svg>
-        </div>
-        <h2>Waiting for your friend…</h2>
-        <p class="muted">Send them this link. The game starts as soon as they accept.</p>
-        <div class="link-box">
-          <span id="challenge-link" class="link-text"></span>
-          <button id="copy-link" type="button" class="small">Copy</button>
-        </div>
-        <button id="share-link" type="button" class="primary" hidden>Share link</button>
-        <button id="challenge-cancel" type="button">Cancel</button>
-      </div>
-    </section>
-
     <section id="screen-room" class="screen centered" hidden>
       <div class="card">
         <div class="spinner" aria-hidden="true">
@@ -191,7 +167,7 @@
           <svg class="mark-icon t"><use href="#mark-t" /></svg>
           <svg class="mark-icon s"><use href="#mark-s" /></svg>
         </div>
-        <h2>Waiting for players…</h2>
+        <h2 id="room-title">Waiting for players…</h2>
         <p id="room-hint" class="muted"></p>
         <div class="link-box">
           <span id="room-link" class="link-text"></span>
@@ -211,7 +187,7 @@
           <svg class="mark-icon o"><use href="#mark-o" /></svg>
         </div>
         <p class="eyebrow">amőba · five in a row</p>
-        <h2 id="invite-title">Opening the challenge…</h2>
+        <h2 id="invite-title">Opening the invitation…</h2>
         <p id="invite-hint" class="muted">Get five in a row on an endless board before they do.</p>
         <div class="field">
           <label for="invite-name">Your name</label>
@@ -230,7 +206,7 @@
           />
           <p id="invite-error" class="field-error" role="alert"></p>
         </div>
-        <button id="invite-accept" type="submit" class="primary" disabled>Accept and play</button>
+        <button id="invite-accept" type="submit" class="primary" disabled>Join</button>
         <button id="invite-decline" type="button">Not now</button>
       </form>
     </section>

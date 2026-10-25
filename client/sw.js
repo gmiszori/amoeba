@@ -29,9 +29,8 @@ self.addEventListener("fetch", (event) => {
   if (req.method !== "GET" || url.origin !== location.origin || url.pathname === "/ws") return;
 
   if (req.mode === "navigate") {
-    // Pages (/, /c/<code>, /r/<code>) come from the network when it's there,
-    // so a new deploy shows up at once; offline they fall back to the cached
-    // shell.
+    // Pages (/, /r/<code>) come from the network when it's there, so a new
+    // deploy shows up at once; offline they fall back to the cached shell.
     event.respondWith(fetch(req).catch(() => caches.match("/")));
   } else if (url.pathname.startsWith("/assets/")) {
     // Hashed, never-changing files: the cache wins. Font subsets load on

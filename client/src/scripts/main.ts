@@ -49,7 +49,6 @@ const screens = {
   lobby: $("screen-lobby"),
   name: $("screen-name"),
   queue: $("screen-queue"),
-  challenge: $("screen-challenge"),
   room: $("screen-room"),
   invite: $("screen-invite"),
   game: $("screen-game"),
@@ -58,8 +57,7 @@ type Screen = keyof typeof screens;
 
 const ui = {
   playOnline: $<HTMLButtonElement>("play-online"),
-  playFriend: $<HTMLButtonElement>("play-friend"),
-  playRoom: $<HTMLButtonElement>("play-room"),
+  playFriends: $<HTMLButtonElement>("play-friends"),
   playBot: $<HTMLButtonElement>("play-bot"),
   playLocal: $<HTMLButtonElement>("play-local"),
   identity: document.querySelector<HTMLElement>(".identity")!,
@@ -75,10 +73,7 @@ const ui = {
   botOffer: $("bot-offer"),
   queueBot: $<HTMLButtonElement>("queue-bot"),
   cancel: $<HTMLButtonElement>("cancel"),
-  challengeLink: $("challenge-link"),
-  copyLink: $<HTMLButtonElement>("copy-link"),
-  shareLink: $<HTMLButtonElement>("share-link"),
-  challengeCancel: $<HTMLButtonElement>("challenge-cancel"),
+  roomTitle: $("room-title"),
   roomHint: $("room-hint"),
   roomLink: $("room-link"),
   roomCopy: $<HTMLButtonElement>("room-copy"),
@@ -121,7 +116,7 @@ drawBackdrop($<HTMLCanvasElement>("backdrop"));
 const coarsePointer = matchMedia("(pointer: coarse)").matches;
 
 /** The online ways to start a game; each needs a username first. */
-type Action = "online" | "friend" | "room";
+type Action = "online" | "friends";
 
 let screen: Screen = "lobby";
 let game: GameState | null = null;
@@ -137,13 +132,13 @@ let local: LocalGame | null = null;
 let botTimer: number | undefined;
 // What the player last asked for; the name screen carries on with it.
 let pendingAction: Action | null = null;
-// The link this page was opened with, until the player accepts or declines
-// it: a challenge (/c/<code>) or a group game (/r/<code>).
-let invite = parseInvite(location.pathname);
-// The group game's waiting room the player is in, if any.
+// The code of the room link (/r/<code>) this page was opened with, until the
+// player accepts or declines it.
+let invite = location.pathname.match(/^\/r\/([a-z0-9]{4,12})\/?$/i)?.[1].toLowerCase() ?? null;
+// The room the player is waiting in, if any.
 let room: RoomState | null = null;
-// The room a guest is waiting in, so a reconnect (the server drops guests on
-// disconnect) enters it again.
+// The room a guest is waiting in, so a reconnect after the server has given
+// up on them enters it again.
 let wantRoom: string | null = null;
 let botOfferTimer: number | undefined;
 
@@ -157,11 +152,6 @@ const myTurn = () => !!game && !game.over && game.turn === me(game).mark;
 const playable = (cell: Cell) =>
   !occupied.has(key(cell)) && (occupied.size === 0 || inReach(cell, (c) => occupied.has(key(c))));
 const savedName = () => normalizeName(store.get(NAME_KEY) ?? "");
-
-function parseInvite(path: string): { kind: "challenge" | "room"; code: string } | null {
-  const m = path.match(/^\/([cr])\/([a-z0-9]{4,12})\/?$/i);
-  return m && { kind: m[1] === "c" ? "challenge" : "room", code: m[2].toLowerCase() };
-}
 
 function show(next: Screen): void {
   for (const [name, el] of Object.entries(screens)) el.hidden = name !== next;
@@ -191,7 +181,7 @@ const conn = new Connection(wsUrl, {
     conn.send({ type: "hello", token: store.get(TOKEN_KEY) ?? undefined });
   },
   status(connected) {
-    for (const b of [ui.playOnline, ui.playFriend, ui.playRoom]) b.disabled = !connected;
+    for (const b of [ui.playOnline, ui.playFriends]) b.disabled = !connected;
     ui.inviteAccept.disabled = !connected || ui.inviteAccept.dataset.ready !== "true";
     clearTimeout(disconnectedTimer);
     if (connected) {
@@ -208,7 +198,7 @@ function handleMessage(msg: ServerMessage): void {
   switch (msg.type) {
     case "welcome":
       store.set(TOKEN_KEY, msg.token);
-      if (invite) conn.send({ type: invite.kind === "room" ? "peekRoom" : "peek", code: invite.code });
+      if (invite) conn.send({ type: "peekRoom", code: invite });
       break;
     case "lobby":
       if (local) break; // e.g. a reconnect while playing on this device
@@ -227,33 +217,30 @@ function handleMessage(msg: ServerMessage): void {
       wantQueue = true;
       show("queue");
       break;
-    case "challenge":
-      game = null;
-      wantQueue = false;
-      showChallenge(msg.code);
-      break;
-    case "invite":
-      if (game && !game.over) break; // finish the running game first
-      showInvite(`${msg.name} challenges you`, "Get five in a row on an endless board before they do.", "Accept and play");
-      break;
     case "roomInvite": {
-      if (game && !game.over) break;
-      const [host, ...guests] = msg.players;
-      const others = guests.length ? ` with ${listNames(guests)}` : "";
-      showInvite(
-        `${host} invites you to a group game`,
-        `Up to ${msg.max} players${others}. Get five in a row on an endless board before the others do.`,
-        "Join the game",
-      );
+      if (game && !game.over) break; // finish the running game first
+      const others = msg.players.filter((name) => name !== msg.host);
+      ui.inviteTitle.textContent = `${msg.host} invites you to play`;
+      ui.inviteHint.textContent = msg.playing
+        ? "A game is in progress. Join now and you'll play in the next one."
+        : `${others.length ? `${listNames(others)} ${others.length > 1 ? "are" : "is"} in. ` : ""}` +
+          `Up to ${msg.max} players, five in a row on an endless board.`;
+      ui.inviteAccept.dataset.ready = "true";
+      ui.inviteAccept.disabled = !conn.connected;
+      show("invite");
       break;
     }
     case "room":
+      if (local) break; // playing on this device meanwhile
       game = null;
       wantQueue = false;
       if (invite) clearInvite();
       showRoom(msg);
       break;
     case "game":
+      // An old online result that arrives on reconnect mustn't replace a
+      // game on this device.
+      if (local) break;
       wantQueue = false;
       wantRoom = null;
       room = null;
@@ -272,8 +259,8 @@ function handleMessage(msg: ServerMessage): void {
         } else {
           askName(pendingAction, msg.message);
         }
-      } else if (msg.code === "challenge" || msg.code === "room") {
-        // The link can't be used, or the host closed the group game.
+      } else if (msg.code === "room") {
+        // The link can't be used, or the room was closed.
         wantRoom = null;
         room = null;
         if (invite) {
@@ -300,11 +287,10 @@ function handleMessage(msg: ServerMessage): void {
 
 // ---- home ----
 
-for (const b of [ui.playOnline, ui.playFriend, ui.playRoom]) b.disabled = true;
+for (const b of [ui.playOnline, ui.playFriends]) b.disabled = true;
 
 ui.playOnline.addEventListener("click", () => start("online"));
-ui.playFriend.addEventListener("click", () => start("friend"));
-ui.playRoom.addEventListener("click", () => start("room"));
+ui.playFriends.addEventListener("click", () => start("friends"));
 // These two work offline too: they need no server.
 ui.playBot.addEventListener("click", () => startBot());
 ui.playLocal.addEventListener("click", startLocal);
@@ -329,10 +315,7 @@ function start(action: Action): void {
       wantQueue = true;
       joinQueue();
       break;
-    case "friend":
-      conn.send({ type: "challenge", name });
-      break;
-    case "room":
+    case "friends":
       conn.send({ type: "room", name });
       break;
   }
@@ -402,98 +385,79 @@ ui.queueBot.addEventListener("click", () => {
   startBot();
 });
 
-// ---- challenge a friend ----
+// ---- room for playing with friends ----
 
-function showChallenge(code: string): void {
-  setLink(ui.challengeLink, ui.copyLink, ui.shareLink, `/c/${code}`);
-  show("challenge");
-}
-
-/** Fills in a link box; the copy and share buttons send the link. */
-function setLink(text: HTMLElement, copy: HTMLButtonElement, share: HTMLButtonElement, path: string): void {
-  const url = `${location.origin}${path}`;
-  if (text.dataset.url === url) return; // keep "Copied" while the room updates
-  text.textContent = url.replace(/^https?:\/\//, "");
-  text.dataset.url = url;
-  share.hidden = !navigator.share;
-  copy.textContent = "Copy";
-}
-
-function wireLink(text: HTMLElement, copy: HTMLButtonElement, share: HTMLButtonElement, message: () => string): void {
-  copy.addEventListener("click", async () => {
-    try {
-      await navigator.clipboard.writeText(text.dataset.url ?? "");
-      copy.textContent = "Copied";
-    } catch {
-      // No clipboard access (e.g. plain HTTP): select the text to copy by hand.
-      getSelection()?.selectAllChildren(text);
-    }
-  });
-  share.addEventListener("click", () => {
-    navigator
-      .share({ title: "amőba", text: message(), url: text.dataset.url })
-      .catch(() => {}); // the player closed the share sheet
-  });
-}
-
-wireLink(ui.challengeLink, ui.copyLink, ui.shareLink, () => {
-  const name = savedName();
-  return `${name ? `${name} challenges you` : "You're challenged"} to a game of amőba – five in a row.`;
+ui.roomCopy.addEventListener("click", async () => {
+  try {
+    await navigator.clipboard.writeText(ui.roomLink.dataset.url ?? "");
+    ui.roomCopy.textContent = "Copied";
+  } catch {
+    // No clipboard access (e.g. plain HTTP): select the text to copy by hand.
+    getSelection()?.selectAllChildren(ui.roomLink);
+  }
 });
 
-ui.challengeCancel.addEventListener("click", () => {
-  conn.send({ type: "cancel" });
-  show("lobby");
-});
-
-// ---- group game waiting room ----
-
-wireLink(ui.roomLink, ui.roomCopy, ui.roomShare, () => {
-  const host = room?.players[0]?.name;
-  return `${host ? `${host} invites you` : "You're invited"} to a group game of amőba – five in a row.`;
+ui.roomShare.addEventListener("click", () => {
+  const host = room?.host;
+  navigator
+    .share({
+      title: "amőba",
+      text: `${host ? `${host} invites you` : "You're invited"} to play amőba – five in a row.`,
+      url: ui.roomLink.dataset.url,
+    })
+    .catch(() => {}); // the player closed the share sheet
 });
 
 function showRoom(r: RoomState): void {
   room = r;
-  const host = r.you === 0;
+  const isHost = !!r.players[r.you]?.host;
   // A guest who drops out of the room enters it again on reconnect.
-  wantRoom = host ? null : r.code;
-  setLink(ui.roomLink, ui.roomCopy, ui.roomShare, `/r/${r.code}`);
+  wantRoom = isHost ? null : r.code;
+
+  const url = `${location.origin}/r/${r.code}`;
+  if (ui.roomLink.dataset.url !== url) {
+    ui.roomLink.textContent = url.replace(/^https?:\/\//, "");
+    ui.roomLink.dataset.url = url;
+    ui.roomShare.hidden = !navigator.share;
+    ui.roomCopy.textContent = "Copy";
+  }
 
   const items = r.players.map((p, i) => {
     const li = document.createElement("li");
     li.textContent = p.name;
     const tag = document.createElement("span");
     tag.className = "tag";
-    const notes = [i === r.you && "you", i === 0 && "host", !p.connected && "offline"].filter(Boolean);
-    tag.textContent = notes.join(" · ");
+    tag.textContent = [i === r.you && "you", p.host && "host", !p.connected && "offline"].filter(Boolean).join(" · ");
     tag.classList.toggle("offline", !p.connected);
     li.append(tag);
     return li;
   });
-  for (let i = r.players.length; i < r.max; i++) {
+  if (!r.playing && r.players.length < r.min) {
     const li = document.createElement("li");
     li.className = "empty";
-    li.textContent = i < r.min ? "Waiting for a player…" : "Free seat";
+    li.textContent = "Waiting for a friend…";
     items.push(li);
   }
   ui.roomPlayers.replaceChildren(...items);
 
   const n = r.players.length;
-  const hostName = r.players[0].name;
-  ui.roomHint.textContent = host
-    ? `Send this link to 2 or 3 friends. You can start once ${r.min} players are in; with ${r.max} it starts by itself.`
-    : r.players[0].connected
-      ? `Waiting for ${hostName} to start the game.`
-      : `${hostName} is reconnecting…`;
-  ui.roomStart.hidden = !host;
+  const host = r.players.find((p) => p.host);
+  ui.roomTitle.textContent = r.playing ? "A game is in progress" : "Waiting for players…";
+  ui.roomHint.textContent = r.playing
+    ? `You'll play in the next one, when ${r.host} starts it.`
+    : isHost
+      ? `Send this link to up to ${r.max - 1} friends, and start when everyone's in.`
+      : host?.connected
+        ? `Waiting for ${r.host} to start the game.`
+        : `${r.host} is reconnecting…`;
+  ui.roomStart.hidden = !isHost;
   ui.roomStart.disabled = n < r.min;
   ui.roomStart.textContent = n < r.min ? `Start (needs ${r.min} players)` : `Start with ${n} players`;
-  ui.roomLeave.textContent = host ? "Cancel" : "Leave";
+  ui.roomLeave.textContent = isHost ? "Close the room" : "Leave";
   show("room");
 }
 
-/** Enters the group game with the given code; false without a saved name. */
+/** Enters the room with the given code; false without a saved name. */
 function enterRoom(code: string): boolean {
   const name = savedName();
   return !!name && conn.send({ type: "enter", code, name });
@@ -507,22 +471,13 @@ ui.roomLeave.addEventListener("click", () => {
   show("lobby");
 });
 
-// ---- invite (opened someone's challenge or group game link) ----
+// ---- invite (opened someone's room link) ----
 
 if (invite) {
   ui.inviteName.value = store.get(NAME_KEY) ?? "";
   show("invite");
 } else {
   show("lobby");
-}
-
-function showInvite(title: string, hint: string, accept: string): void {
-  ui.inviteTitle.textContent = title;
-  ui.inviteHint.textContent = hint;
-  ui.inviteAccept.textContent = accept;
-  ui.inviteAccept.dataset.ready = "true";
-  ui.inviteAccept.disabled = !conn.connected;
-  show("invite");
 }
 
 function clearInvite(): void {
@@ -536,8 +491,7 @@ ui.inviteForm.addEventListener("submit", (e) => {
   const name = readName(ui.inviteName, ui.inviteError);
   if (!name || !invite) return;
   store.set(NAME_KEY, name);
-  if (invite.kind === "room") conn.send({ type: "enter", code: invite.code, name });
-  else conn.send({ type: "accept", code: invite.code, name });
+  conn.send({ type: "enter", code: invite, name });
 });
 
 ui.inviteName.addEventListener("input", () => (ui.inviteError.textContent = ""));
@@ -746,8 +700,8 @@ function renderHud(): void {
   ui.resultDetail.textContent = resultDetail(g, winner, duel);
 
   if (g.mode === "room") {
-    // No rematch in a group game: everyone goes back to the room, where the
-    // host starts the next one. It's gone once the host has left.
+    // No rematch with friends: everyone goes back to the room, where the
+    // host starts the next game. It's gone once the host has left.
     ui.rematch.disabled = !g.room;
     ui.rematch.classList.toggle("blurred", !g.room);
     ui.rematch.textContent = "Back to the room";

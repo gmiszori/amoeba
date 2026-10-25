@@ -403,7 +403,7 @@ button.big .btn-icon {
 
 .modes {
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
+  grid-template-columns: repeat(3, 1fr);
   gap: 8px;
   margin-top: 20px;
 }
@@ -439,7 +439,7 @@ button.mode .btn-icon {
   color: var(--text-sub);
 }
 
-/* ---- name, challenge and invite ---- */
+/* ---- name, room and invite ---- */
 
 .eyebrow {
   margin: 12px 0 4px;
