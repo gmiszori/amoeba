@@ -1,4 +1,4 @@
-import { BoardView } from "./board";
+import { alternating, BoardView } from "./board";
 import type { Cell, Mark } from "./protocol";
 
 // Finished games for the home screen's background, laid out so the marks sit
@@ -60,7 +60,7 @@ export function drawBackdrop(canvas: HTMLCanvasElement): void {
       const sample = canvas.clientHeight > canvas.clientWidth ? TALL : WIDE;
       if (sample !== shown) {
         shown = sample;
-        view.setModel(sample.moves, sample.line, sample.winner);
+        view.setModel(sample.moves, alternating(sample.moves.length), sample.line, sample.winner);
       }
       view.recenter();
     }),

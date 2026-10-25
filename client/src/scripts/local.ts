@@ -65,15 +65,21 @@ export class LocalGame implements Board {
    */
   state(): GameState {
     const vsBot = this.bot !== null;
+    const names = vsBot ? [this.playerName, BOT_NAME] : ["", ""];
+    if (this.bot === "X") names.reverse();
     return {
       type: "game",
       id: this.id,
       mode: vsBot ? "bot" : "local",
-      you: vsBot ? (this.bot === "X" ? "O" : "X") : this.turn,
-      yourName: vsBot ? this.playerName : "",
-      opponentName: vsBot ? BOT_NAME : "",
-      opponentConnected: true,
-      moves: this.moves,
+      you: vsBot ? (this.bot === "X" ? 1 : 0) : this.turn === "X" ? 0 : 1,
+      players: (["X", "O"] as const).map((mark, i) => ({
+        name: names[i],
+        mark,
+        connected: true,
+        left: false,
+        rematch: false,
+      })),
+      moves: this.moves.map(([x, y], i) => [x, y, i % 2]),
       turn: this.turn,
       remainingMs: 0,
       turnMs: 0,
@@ -81,8 +87,6 @@ export class LocalGame implements Board {
       winner: this.winner ?? undefined,
       reason: this.winner ? "five" : undefined,
       line: this.line ?? undefined,
-      rematch: { you: false, opponent: false },
-      opponentLeft: false,
     };
   }
 

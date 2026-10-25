@@ -44,7 +44,7 @@ func TestWinDirections(t *testing.T) {
 	}
 	for name, xs := range cases {
 		t.Run(name, func(t *testing.T) {
-			g := New()
+			g := New(2)
 			play(t, g, interleave(xs, row(100, 100, 0, 1, 4))...)
 			if !g.Over() || g.Winner() != X || g.Reason() != Five {
 				t.Fatalf("over=%v winner=%v reason=%v, want X to win by five", g.Over(), g.Winner(), g.Reason())
@@ -57,7 +57,7 @@ func TestWinDirections(t *testing.T) {
 }
 
 func TestFourDoesNotWin(t *testing.T) {
-	g := New()
+	g := New(2)
 	play(t, g, interleave(row(0, 0, 1, 0, 4), row(0, 5, 1, 0, 4))...)
 	if g.Over() {
 		t.Fatal("four in a row ended the game")
@@ -68,7 +68,7 @@ func TestOverlineWins(t *testing.T) {
 	// X builds XXX_XX, then fills the gap to make six.
 	xs := []Point{{0, 0}, {1, 0}, {2, 0}, {4, 0}, {5, 0}, {3, 0}}
 	os := row(0, 9, 3, 0, 5) // spread out so O never wins
-	g := New()
+	g := New(2)
 	play(t, g, interleave(xs, os)...)
 	if g.Winner() != X {
 		t.Fatalf("winner %v, want X", g.Winner())
@@ -79,7 +79,7 @@ func TestOverlineWins(t *testing.T) {
 }
 
 func TestOWins(t *testing.T) {
-	g := New()
+	g := New(2)
 	play(t, g, interleave(row(0, 9, 3, 0, 5), row(0, 0, 0, 1, 5))...)
 	if g.Winner() != O {
 		t.Fatalf("winner %v, want O", g.Winner())
@@ -87,7 +87,7 @@ func TestOWins(t *testing.T) {
 }
 
 func TestRuleErrors(t *testing.T) {
-	g := New()
+	g := New(2)
 	if err := g.Play(O, Point{0, 0}); !errors.Is(err, ErrNotYourTurn) {
 		t.Fatalf("O moving first: got %v", err)
 	}
@@ -108,8 +108,8 @@ func TestRuleErrors(t *testing.T) {
 	}
 }
 
-func TestMoveLimit(t *testing.T) {
-	g := New()
+func TestMoveLimitDraws(t *testing.T) {
+	g := New(2)
 	for i := range MaxMoves {
 		// Spread out so nobody ever gets five in a row.
 		p := Point{(i / 2) * 2, (i % 2) * 50}
@@ -117,7 +117,68 @@ func TestMoveLimit(t *testing.T) {
 			t.Fatalf("move %d: %v", i, err)
 		}
 	}
-	if err := g.Play(g.Turn(), Point{-1, -1}); !errors.Is(err, ErrBoardFull) {
+	if !g.Over() || g.Winner() != None || g.Reason() != Draw {
+		t.Fatalf("at the limit: over=%v winner=%v reason=%v, want a draw", g.Over(), g.Winner(), g.Reason())
+	}
+	if err := g.Play(g.Turn(), Point{-1, -1}); !errors.Is(err, ErrGameOver) {
 		t.Fatalf("move past the limit: got %v", err)
+	}
+}
+
+func TestFourPlayersTakeTurns(t *testing.T) {
+	g := New(4)
+	for i, want := range []Mark{X, O, T, S, X} {
+		if g.Turn() != want {
+			t.Fatalf("move %d: turn %v, want %v", i, g.Turn(), want)
+		}
+		play(t, g, Point{i * 3, 0})
+	}
+	for i, m := range g.Moves() {
+		if want := SeatMark(i % 4); m.Mark != want {
+			t.Fatalf("move %d recorded as %v, want %v", i, m.Mark, want)
+		}
+	}
+}
+
+func TestThirdPlayerWins(t *testing.T) {
+	g := New(3)
+	for i := range 5 {
+		play(t, g, Point{i * 2, 10}, Point{i * 2, 20}, Point{i, 0}) // X and O spread out
+		if g.Over() {
+			if i != 4 || g.Winner() != T || g.Reason() != Five {
+				t.Fatalf("after round %d: winner=%v reason=%v, want T by five in round 4", i, g.Winner(), g.Reason())
+			}
+			return
+		}
+	}
+	t.Fatal("nobody won")
+}
+
+func TestForfeitSkipsPlayer(t *testing.T) {
+	g := New(3)
+	play(t, g, Point{0, 0}) // X; O to move
+	g.Forfeit(O, Timeout)
+	if g.Over() || g.Turn() != T || g.Out(O) != Timeout {
+		t.Fatalf("after O timed out: over=%v turn=%v out=%q", g.Over(), g.Turn(), g.Out(O))
+	}
+	play(t, g, Point{1, 0}) // T
+	if g.Turn() != X {
+		t.Fatalf("after T: turn %v, want X (O is out)", g.Turn())
+	}
+	g.Forfeit(T, Resign) // not T's turn; X keeps it
+	if !g.Over() || g.Winner() != X || g.Reason() != Resign {
+		t.Fatalf("last player standing: over=%v winner=%v reason=%v", g.Over(), g.Winner(), g.Reason())
+	}
+}
+
+func TestForfeitOffTurnKeepsTurn(t *testing.T) {
+	g := New(4)
+	g.Forfeit(T, Resign)
+	if g.Over() || g.Turn() != X {
+		t.Fatalf("over=%v turn=%v, want X still to move", g.Over(), g.Turn())
+	}
+	play(t, g, Point{0, 0}, Point{1, 0}) // X, O
+	if g.Turn() != S {
+		t.Fatalf("turn %v, want S (T is out)", g.Turn())
 	}
 }

@@ -1,12 +1,20 @@
 import { drawBackdrop } from "./backdrop";
-import { BoardView } from "./board";
+import { alternating, BoardView } from "./board";
 import { botMove } from "./bot";
 import { Connection } from "./connection";
 import { LocalGame } from "./local";
 
 // Dev builds reload the page whenever esbuild rebuilds (see build.mjs).
 if (DEV) new EventSource("/esbuild").addEventListener("change", () => location.reload());
-import { normalizeName, type Cell, type GameState, type Mark, type ServerMessage } from "./protocol";
+import {
+  normalizeName,
+  type Cell,
+  type GameState,
+  type Mark,
+  type Player,
+  type RoomState,
+  type ServerMessage,
+} from "./protocol";
 
 // Offline support and "Add to Home Screen" (see sw.js). Dev builds skip it
 // so cached files never get in the way of live reload.
@@ -40,6 +48,7 @@ const screens = {
   name: $("screen-name"),
   queue: $("screen-queue"),
   challenge: $("screen-challenge"),
+  room: $("screen-room"),
   invite: $("screen-invite"),
   game: $("screen-game"),
 };
@@ -48,6 +57,7 @@ type Screen = keyof typeof screens;
 const ui = {
   playOnline: $<HTMLButtonElement>("play-online"),
   playFriend: $<HTMLButtonElement>("play-friend"),
+  playRoom: $<HTMLButtonElement>("play-room"),
   playBot: $<HTMLButtonElement>("play-bot"),
   playLocal: $<HTMLButtonElement>("play-local"),
   identity: document.querySelector<HTMLElement>(".identity")!,
@@ -67,16 +77,25 @@ const ui = {
   copyLink: $<HTMLButtonElement>("copy-link"),
   shareLink: $<HTMLButtonElement>("share-link"),
   challengeCancel: $<HTMLButtonElement>("challenge-cancel"),
+  roomHint: $("room-hint"),
+  roomLink: $("room-link"),
+  roomCopy: $<HTMLButtonElement>("room-copy"),
+  roomShare: $<HTMLButtonElement>("room-share"),
+  roomPlayers: $("room-players"),
+  roomStart: $<HTMLButtonElement>("room-start"),
+  roomLeave: $<HTMLButtonElement>("room-leave"),
   inviteForm: $<HTMLFormElement>("invite-form"),
   inviteTitle: $("invite-title"),
+  inviteHint: $("invite-hint"),
   inviteName: $<HTMLInputElement>("invite-name"),
   inviteError: $("invite-error"),
   inviteAccept: $<HTMLButtonElement>("invite-accept"),
   inviteDecline: $<HTMLButtonElement>("invite-decline"),
   online: document.querySelectorAll<HTMLElement>(".online"),
   onlineCount: document.querySelectorAll<HTMLElement>(".online-count"),
-  playerX: $("player-x"),
-  playerO: $("player-o"),
+  hud: document.querySelector<HTMLElement>(".hud")!,
+  // One per seat, in seat order: X, O, T, S.
+  seats: [$("player-x"), $("player-o"), $("player-t"), $("player-s")],
   clock: $("clock"),
   clockText: $("clock-text"),
   clockBar: $("clock-bar"),
@@ -100,7 +119,7 @@ drawBackdrop($<HTMLCanvasElement>("backdrop"));
 const coarsePointer = matchMedia("(pointer: coarse)").matches;
 
 /** The online ways to start a game; each needs a username first. */
-type Action = "online" | "friend";
+type Action = "online" | "friend" | "room";
 
 let screen: Screen = "lobby";
 let game: GameState | null = null;
@@ -116,17 +135,28 @@ let local: LocalGame | null = null;
 let botTimer: number | undefined;
 // What the player last asked for; the name screen carries on with it.
 let pendingAction: Action | null = null;
-// The challenge code from a /c/<code> link this page was opened with, until
-// the player accepts or declines it.
-let inviteCode = location.pathname.match(/^\/c\/([a-z0-9]{4,12})\/?$/i)?.[1].toLowerCase() ?? null;
+// The link this page was opened with, until the player accepts or declines
+// it: a challenge (/c/<code>) or a group game (/r/<code>).
+let invite = parseInvite(location.pathname);
+// The group game's waiting room the player is in, if any.
+let room: RoomState | null = null;
+// The room a guest is waiting in, so a reconnect (the server drops guests on
+// disconnect) enters it again.
+let wantRoom: string | null = null;
 let botOfferTimer: number | undefined;
 
 const BOT_OFFER_DELAY = 5_000;
 const TITLE = document.title;
 
-const key = ([x, y]: Cell) => `${x},${y}`;
-const myTurn = () => !!game && !game.over && game.turn === game.you;
+const key = ([x, y]: readonly number[]) => `${x},${y}`;
+const me = (g: GameState) => g.players[g.you];
+const myTurn = () => !!game && !game.over && game.turn === me(game).mark;
 const savedName = () => normalizeName(store.get(NAME_KEY) ?? "");
+
+function parseInvite(path: string): { kind: "challenge" | "room"; code: string } | null {
+  const m = path.match(/^\/([cr])\/([a-z0-9]{4,12})\/?$/i);
+  return m && { kind: m[1] === "c" ? "challenge" : "room", code: m[2].toLowerCase() };
+}
 
 function show(next: Screen): void {
   for (const [name, el] of Object.entries(screens)) el.hidden = name !== next;
@@ -156,7 +186,7 @@ const conn = new Connection(wsUrl, {
     conn.send({ type: "hello", token: store.get(TOKEN_KEY) ?? undefined });
   },
   status(connected) {
-    for (const b of [ui.playOnline, ui.playFriend]) b.disabled = !connected;
+    for (const b of [ui.playOnline, ui.playFriend, ui.playRoom]) b.disabled = !connected;
     ui.inviteAccept.disabled = !connected || ui.inviteAccept.dataset.ready !== "true";
     clearTimeout(disconnectedTimer);
     if (connected) {
@@ -173,16 +203,19 @@ function handleMessage(msg: ServerMessage): void {
   switch (msg.type) {
     case "welcome":
       store.set(TOKEN_KEY, msg.token);
-      if (inviteCode) conn.send({ type: "peek", code: inviteCode });
+      if (invite) conn.send({ type: invite.kind === "room" ? "peekRoom" : "peek", code: invite.code });
       break;
     case "lobby":
       if (local) break; // e.g. a reconnect while playing on this device
       game = null;
+      room = null;
       if (wantQueue && joinQueue()) break;
       wantQueue = false;
-      // Opened from a challenge link: stay on the invite until it's answered.
-      // A reconnect shouldn't throw the player off the name screen either.
-      if (!inviteCode && screen !== "name") show("lobby");
+      if (wantRoom && enterRoom(wantRoom)) break;
+      wantRoom = null;
+      // Opened from a link: stay on the invite until it's answered. A
+      // reconnect shouldn't throw the player off the name screen either.
+      if (!invite && screen !== "name") show("lobby");
       break;
     case "queued":
       game = null;
@@ -196,32 +229,53 @@ function handleMessage(msg: ServerMessage): void {
       break;
     case "invite":
       if (game && !game.over) break; // finish the running game first
-      ui.inviteTitle.textContent = `${msg.name} challenges you`;
-      ui.inviteAccept.dataset.ready = "true";
-      ui.inviteAccept.disabled = !conn.connected;
-      show("invite");
+      showInvite(`${msg.name} challenges you`, "Get five in a row on an endless board before they do.", "Accept and play");
+      break;
+    case "roomInvite": {
+      if (game && !game.over) break;
+      const [host, ...guests] = msg.players;
+      const others = guests.length ? ` with ${listNames(guests)}` : "";
+      showInvite(
+        `${host} invites you to a group game`,
+        `Up to ${msg.max} players${others}. Get five in a row on an endless board before the others do.`,
+        "Join the game",
+      );
+      break;
+    }
+    case "room":
+      game = null;
+      wantQueue = false;
+      if (invite) clearInvite();
+      showRoom(msg);
       break;
     case "game":
       wantQueue = false;
-      if (inviteCode) clearInvite();
+      wantRoom = null;
+      room = null;
+      if (invite) clearInvite();
       updateGame(msg);
       break;
     case "error":
       if (msg.code === "name") {
         // The server rejected the username: ask for another one.
         wantQueue = false;
+        wantRoom = null;
         store.set(NAME_KEY, "");
-        if (inviteCode) {
+        if (invite) {
           show("invite");
           ui.inviteError.textContent = msg.message;
         } else {
           askName(pendingAction, msg.message);
         }
-      } else if (msg.code === "challenge") {
-        if (inviteCode) {
+      } else if (msg.code === "challenge" || msg.code === "room") {
+        // The link can't be used, or the host closed the group game.
+        wantRoom = null;
+        room = null;
+        if (invite) {
           clearInvite();
           if (screen === "invite") show("lobby");
         }
+        if (screen === "room") show("lobby");
         toast(msg.message);
       } else {
         toast(msg.message);
@@ -241,10 +295,11 @@ function handleMessage(msg: ServerMessage): void {
 
 // ---- home ----
 
-for (const b of [ui.playOnline, ui.playFriend]) b.disabled = true;
+for (const b of [ui.playOnline, ui.playFriend, ui.playRoom]) b.disabled = true;
 
 ui.playOnline.addEventListener("click", () => start("online"));
 ui.playFriend.addEventListener("click", () => start("friend"));
+ui.playRoom.addEventListener("click", () => start("room"));
 // These two work offline too: they need no server.
 ui.playBot.addEventListener("click", () => startBot());
 ui.playLocal.addEventListener("click", startLocal);
@@ -271,6 +326,9 @@ function start(action: Action): void {
       break;
     case "friend":
       conn.send({ type: "challenge", name });
+      break;
+    case "room":
+      conn.send({ type: "room", name });
       break;
   }
 }
@@ -342,33 +400,40 @@ ui.queueBot.addEventListener("click", () => {
 // ---- challenge a friend ----
 
 function showChallenge(code: string): void {
-  const url = `${location.origin}/c/${code}`;
-  ui.challengeLink.textContent = url.replace(/^https?:\/\//, "");
-  ui.challengeLink.dataset.url = url;
-  ui.shareLink.hidden = !navigator.share;
-  ui.copyLink.textContent = "Copy";
+  setLink(ui.challengeLink, ui.copyLink, ui.shareLink, `/c/${code}`);
   show("challenge");
 }
 
-ui.copyLink.addEventListener("click", async () => {
-  try {
-    await navigator.clipboard.writeText(ui.challengeLink.dataset.url ?? "");
-    ui.copyLink.textContent = "Copied";
-  } catch {
-    // No clipboard access (e.g. plain HTTP): select the text to copy by hand.
-    getSelection()?.selectAllChildren(ui.challengeLink);
-  }
-});
+/** Fills in a link box; the copy and share buttons send the link. */
+function setLink(text: HTMLElement, copy: HTMLButtonElement, share: HTMLButtonElement, path: string): void {
+  const url = `${location.origin}${path}`;
+  if (text.dataset.url === url) return; // keep "Copied" while the room updates
+  text.textContent = url.replace(/^https?:\/\//, "");
+  text.dataset.url = url;
+  share.hidden = !navigator.share;
+  copy.textContent = "Copy";
+}
 
-ui.shareLink.addEventListener("click", () => {
+function wireLink(text: HTMLElement, copy: HTMLButtonElement, share: HTMLButtonElement, message: () => string): void {
+  copy.addEventListener("click", async () => {
+    try {
+      await navigator.clipboard.writeText(text.dataset.url ?? "");
+      copy.textContent = "Copied";
+    } catch {
+      // No clipboard access (e.g. plain HTTP): select the text to copy by hand.
+      getSelection()?.selectAllChildren(text);
+    }
+  });
+  share.addEventListener("click", () => {
+    navigator
+      .share({ title: "amőba", text: message(), url: text.dataset.url })
+      .catch(() => {}); // the player closed the share sheet
+  });
+}
+
+wireLink(ui.challengeLink, ui.copyLink, ui.shareLink, () => {
   const name = savedName();
-  navigator
-    .share({
-      title: "amőba",
-      text: `${name ? `${name} challenges you` : "You're challenged"} to a game of amőba – five in a row.`,
-      url: ui.challengeLink.dataset.url,
-    })
-    .catch(() => {}); // the player closed the share sheet
+  return `${name ? `${name} challenges you` : "You're challenged"} to a game of amőba – five in a row.`;
 });
 
 ui.challengeCancel.addEventListener("click", () => {
@@ -376,17 +441,87 @@ ui.challengeCancel.addEventListener("click", () => {
   show("lobby");
 });
 
-// ---- invite (opened someone's challenge link) ----
+// ---- group game waiting room ----
 
-if (inviteCode) {
+wireLink(ui.roomLink, ui.roomCopy, ui.roomShare, () => {
+  const host = room?.players[0]?.name;
+  return `${host ? `${host} invites you` : "You're invited"} to a group game of amőba – five in a row.`;
+});
+
+function showRoom(r: RoomState): void {
+  room = r;
+  const host = r.you === 0;
+  // A guest who drops out of the room enters it again on reconnect.
+  wantRoom = host ? null : r.code;
+  setLink(ui.roomLink, ui.roomCopy, ui.roomShare, `/r/${r.code}`);
+
+  const items = r.players.map((p, i) => {
+    const li = document.createElement("li");
+    li.textContent = p.name;
+    const tag = document.createElement("span");
+    tag.className = "tag";
+    const notes = [i === r.you && "you", i === 0 && "host", !p.connected && "offline"].filter(Boolean);
+    tag.textContent = notes.join(" · ");
+    tag.classList.toggle("offline", !p.connected);
+    li.append(tag);
+    return li;
+  });
+  for (let i = r.players.length; i < r.max; i++) {
+    const li = document.createElement("li");
+    li.className = "empty";
+    li.textContent = i < r.min ? "Waiting for a player…" : "Free seat";
+    items.push(li);
+  }
+  ui.roomPlayers.replaceChildren(...items);
+
+  const n = r.players.length;
+  const hostName = r.players[0].name;
+  ui.roomHint.textContent = host
+    ? `Send this link to 2 or 3 friends. You can start once ${r.min} players are in; with ${r.max} it starts by itself.`
+    : r.players[0].connected
+      ? `Waiting for ${hostName} to start the game.`
+      : `${hostName} is reconnecting…`;
+  ui.roomStart.hidden = !host;
+  ui.roomStart.disabled = n < r.min;
+  ui.roomStart.textContent = n < r.min ? `Start (needs ${r.min} players)` : `Start with ${n} players`;
+  ui.roomLeave.textContent = host ? "Cancel" : "Leave";
+  show("room");
+}
+
+/** Enters the group game with the given code; false without a saved name. */
+function enterRoom(code: string): boolean {
+  const name = savedName();
+  return !!name && conn.send({ type: "enter", code, name });
+}
+
+ui.roomStart.addEventListener("click", () => conn.send({ type: "start" }));
+ui.roomLeave.addEventListener("click", () => {
+  wantRoom = null;
+  room = null;
+  conn.send({ type: "cancel" });
+  show("lobby");
+});
+
+// ---- invite (opened someone's challenge or group game link) ----
+
+if (invite) {
   ui.inviteName.value = store.get(NAME_KEY) ?? "";
   show("invite");
 } else {
   show("lobby");
 }
 
+function showInvite(title: string, hint: string, accept: string): void {
+  ui.inviteTitle.textContent = title;
+  ui.inviteHint.textContent = hint;
+  ui.inviteAccept.textContent = accept;
+  ui.inviteAccept.dataset.ready = "true";
+  ui.inviteAccept.disabled = !conn.connected;
+  show("invite");
+}
+
 function clearInvite(): void {
-  inviteCode = null;
+  invite = null;
   ui.inviteAccept.dataset.ready = "false";
   history.replaceState(null, "", "/");
 }
@@ -394,9 +529,10 @@ function clearInvite(): void {
 ui.inviteForm.addEventListener("submit", (e) => {
   e.preventDefault();
   const name = readName(ui.inviteName, ui.inviteError);
-  if (!name || !inviteCode) return;
+  if (!name || !invite) return;
   store.set(NAME_KEY, name);
-  conn.send({ type: "accept", code: inviteCode, name });
+  if (invite.kind === "room") conn.send({ type: "enter", code: invite.code, name });
+  else conn.send({ type: "accept", code: invite.code, name });
 });
 
 ui.inviteName.addEventListener("input", () => (ui.inviteError.textContent = ""));
@@ -450,8 +586,13 @@ function updateGame(g: GameState): void {
   deadline = performance.now() + g.remainingMs;
 
   show("game");
+  board.setModel(
+    g.moves.map(([x, y]) => [x, y]),
+    g.moves.map(([, , seat]) => g.players[seat].mark),
+    g.line ?? null,
+    g.winner ?? null,
+  );
   if (isNew) board.recenter();
-  board.setModel(g.moves, g.line ?? null, g.winner ?? null);
 
   if (preview && (!myTurn() || occupied.has(key(preview)))) setPreview(null);
   if (turnChanged && myTurn() && !isNew && g.mode !== "local") navigator.vibrate?.(30);
@@ -462,7 +603,7 @@ function updateGame(g: GameState): void {
 
 function setPreview(cell: Cell | null): void {
   preview = cell;
-  board.setPreview(cell, game?.you ?? "X");
+  board.setPreview(cell, game ? me(game).mark : "X");
 }
 
 function sendMove(cell: Cell): void {
@@ -488,7 +629,7 @@ board.onTap = (cell, pointerType) => {
 
 board.onHover = (cell) => {
   if (!game) return;
-  board.setPreview(cell && myTurn() && !occupied.has(key(cell)) ? cell : null, game.you);
+  board.setPreview(cell && myTurn() && !occupied.has(key(cell)) ? cell : null, me(game).mark);
 };
 
 ui.recenter.addEventListener("click", () => board.recenter());
@@ -500,7 +641,8 @@ ui.leave.addEventListener("click", () => {
     endLocal();
     return;
   }
-  if (game && !game.over && !confirm("Leave this game? It counts as a loss.")) return;
+  const playing = !!game && !game.over && !me(game).out;
+  if (playing && !confirm("Leave this game? It counts as a loss.")) return;
   wantQueue = false;
   conn.send({ type: "leave" });
 });
@@ -531,21 +673,27 @@ function renderHud(): void {
     return;
   }
   const g = game;
-  const opponent = g.opponentName || "Opponent";
   const bot = g.mode === "bot";
+  const duel = g.players.length === 2;
+  const name = (p: Player) => p.name || "Opponent";
+  const self = me(g);
+  const opponents = g.players.filter((p) => p !== self);
 
-  for (const [el, mark] of [
-    [ui.playerX, "X"],
-    [ui.playerO, "O"],
-  ] as const) {
-    const mine = g.you === mark;
-    el.querySelector(".pname")!.textContent = mine ? g.yourName : opponent;
+  ui.hud.classList.toggle("multi", !duel);
+  ui.seats.forEach((el, i) => {
+    const p = g.players[i];
+    el.hidden = !p;
+    if (!p) return;
+    const mine = p === self;
+    el.querySelector(".pname")!.textContent = mine ? p.name : name(p);
     const tag = el.querySelector(".tag")!;
-    const offline = !mine && !g.opponentConnected && !g.opponentLeft;
-    tag.textContent = mine ? "you" : g.opponentLeft ? "left" : offline ? "offline" : bot ? "bot" : "";
-    tag.classList.toggle("offline", offline || (!mine && g.opponentLeft));
-    el.classList.toggle("active", !g.over && g.turn === mark);
-  }
+    const offline = !mine && !p.connected && !p.left;
+    const state = p.left ? "left" : p.out ? "out" : offline ? "offline" : bot && !mine ? "bot" : "";
+    tag.textContent = [mine && "you", state].filter(Boolean).join(" · ");
+    tag.classList.toggle("offline", !mine && (offline || p.left || !!p.out));
+    el.classList.toggle("out", !!p.out);
+    el.classList.toggle("active", !g.over && g.turn === p.mark);
+  });
 
   // visibility (not display) so the HUD grid keeps its three columns. There's
   // no turn clock against Amőbot.
@@ -553,6 +701,7 @@ function renderHud(): void {
   ui.clock.dataset.turn = g.turn;
   ui.back.textContent = g.mode === "random" ? "Find a new opponent" : "Back to menu";
 
+  const current = g.players.find((p) => p.mark === g.turn)!;
   if (g.over) {
     ui.status.textContent = "";
   } else if (myTurn()) {
@@ -561,52 +710,75 @@ function renderHud(): void {
       : coarsePointer
         ? "Your turn – tap a cell"
         : "Your turn – click a cell";
+  } else if (self.out) {
+    ui.status.textContent = `You're out – ${name(current)} is playing`;
   } else {
     ui.status.textContent = bot
-      ? `${opponent} is thinking…`
-      : g.opponentConnected
-        ? `Waiting for ${opponent}…`
-        : `${opponent} is reconnecting…`;
+      ? `${name(current)} is thinking…`
+      : current.connected
+        ? `Waiting for ${name(current)}…`
+        : `${name(current)} is reconnecting…`;
   }
 
   ui.result.hidden = !g.over;
-  if (g.over) {
-    const won = g.winner === g.you;
-    ui.resultTitle.textContent = won ? "You won! 🎉" : bot ? `${opponent} won` : "You lost";
-    ui.resultTitle.className = g.winner === "X" ? "x" : "o";
-    ui.resultDetail.textContent = resultDetail(g, won, opponent);
+  if (!g.over) return;
 
-    // Once the opponent has gone there's no rematch: blur the button and,
-    // if we'd already asked for one, say it's off.
-    ui.rematch.disabled = g.opponentLeft || g.rematch.you;
-    ui.rematch.classList.toggle("blurred", g.opponentLeft);
-    ui.rematch.textContent = bot
-      ? "Play again"
-      : g.opponentLeft
-        ? "Rematch"
-        : g.rematch.you
-          ? `Waiting for ${opponent}…`
-          : g.rematch.opponent
-            ? `${opponent} wants a rematch – accept`
-            : "Rematch";
-    ui.resultNote.hidden = !g.opponentLeft;
-    ui.resultNote.textContent = g.rematch.you
-      ? `Rematch cancelled – ${opponent} left.`
-      : `${opponent} left – no rematch.`;
-  }
+  const winner = g.players.find((p) => p.mark === g.winner);
+  const won = winner === self;
+  ui.resultTitle.textContent = !winner
+    ? "It's a draw"
+    : won
+      ? "You won! 🎉"
+      : bot || !duel
+        ? `${name(winner)} won`
+        : "You lost";
+  ui.resultTitle.className = g.winner?.toLowerCase() ?? "";
+  ui.resultDetail.textContent = resultDetail(g, winner, duel);
+
+  // A rematch needs everyone who stayed, and enough of them: once too many
+  // have gone, blur the button and, if we'd already asked, say it's off.
+  const stayed = g.players.filter((p) => !p.left);
+  const gone = opponents.filter((p) => p.left).map(name);
+  const possible = stayed.length >= (g.mode === "room" ? 3 : 2);
+  const waitingFor = stayed.filter((p) => !p.rematch).map(name);
+  const asking = opponents.filter((p) => p.rematch && !p.left).map(name);
+  ui.rematch.disabled = !possible || self.rematch;
+  ui.rematch.classList.toggle("blurred", !possible);
+  ui.rematch.textContent = bot
+    ? "Play again"
+    : !possible
+      ? "Rematch"
+      : self.rematch
+        ? `Waiting for ${listNames(waitingFor)}…`
+        : asking.length
+          ? `${listNames(asking)} ${asking.length > 1 ? "want" : "wants"} a rematch – accept`
+          : "Rematch";
+  ui.resultNote.hidden = !gone.length;
+  ui.resultNote.textContent = possible
+    ? `${listNames(gone)} left.`
+    : self.rematch
+      ? `Rematch cancelled – ${listNames(gone)} left.`
+      : `${listNames(gone)} left – no rematch.`;
 }
 
-const markName = (m: "X" | "O") => (m === "X" ? "Blue" : "Red");
+/** "Anna", "Anna and Bence", "Anna, Bence and Csaba". */
+function listNames(names: string[]): string {
+  return names.length < 2 ? (names[0] ?? "") : `${names.slice(0, -1).join(", ")} and ${names.at(-1)}`;
+}
+
+const markName = (m: Mark) => ({ X: "Blue", O: "Red", T: "Green", S: "Amber" })[m];
 
 function renderLocalHud(g: GameState): void {
-  for (const [el, mark] of [
-    [ui.playerX, "X"],
-    [ui.playerO, "O"],
-  ] as const) {
-    el.querySelector(".pname")!.textContent = markName(mark);
+  ui.hud.classList.remove("multi");
+  ui.seats.forEach((el, i) => {
+    const p = g.players[i];
+    el.hidden = !p;
+    if (!p) return;
+    el.querySelector(".pname")!.textContent = markName(p.mark);
     el.querySelector(".tag")!.textContent = "";
-    el.classList.toggle("active", !g.over && g.turn === mark);
-  }
+    el.classList.remove("out");
+    el.classList.toggle("active", !g.over && g.turn === p.mark);
+  });
   ui.clock.style.visibility = "hidden"; // no turn timer on a shared device
 
   ui.status.textContent = g.over
@@ -618,7 +790,7 @@ function renderLocalHud(g: GameState): void {
   ui.result.hidden = !g.over;
   if (g.over && g.winner) {
     ui.resultTitle.textContent = `${markName(g.winner)} wins! 🎉`;
-    ui.resultTitle.className = g.winner === "X" ? "x" : "o";
+    ui.resultTitle.className = g.winner.toLowerCase();
     ui.resultDetail.textContent = "Five in a row.";
     ui.resultNote.hidden = true;
     ui.rematch.disabled = false;
@@ -628,16 +800,18 @@ function renderLocalHud(g: GameState): void {
   }
 }
 
-function resultDetail(g: GameState, won: boolean, opponent: string): string {
-  switch (g.reason) {
-    case "five":
-      return won ? "Five in a row." : `${opponent} got five in a row.`;
-    case "timeout":
-      return won ? `${opponent} ran out of time.` : "You ran out of time.";
-    case "resign":
-      return won ? `${opponent} left the game.` : "You left the game.";
+function resultDetail(g: GameState, winner: Player | undefined, duel: boolean): string {
+  const won = winner === me(g);
+  const name = winner?.name || "Opponent";
+  if (g.reason === "draw") return "The board reached its move limit.";
+  if (g.reason === "five") return won ? "Five in a row." : `${name} got five in a row.`;
+  if (!duel) {
+    // Everyone else ran out of time or left.
+    return won ? "You're the last one left." : `${name} is the last one left.`;
   }
-  return "";
+  const opponent = g.players.find((p) => p !== me(g))?.name || "Opponent";
+  if (g.reason === "timeout") return won ? `${opponent} ran out of time.` : "You ran out of time.";
+  return won ? `${opponent} left the game.` : "You left the game.";
 }
 
 // Turn clock: the server sends the remaining time with every state; we count

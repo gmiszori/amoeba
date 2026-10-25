@@ -1,5 +1,5 @@
-// Package hub owns all live state: player sessions, the matchmaking queue and
-// running matches. Everything is kept in memory and guarded by a single mutex,
+// Package hub owns all live state: player sessions, the matchmaking queue,
+// challenge links, multiplayer rooms and running matches. Everything is kept in memory and guarded by a single mutex,
 // which is plenty for a game where each action is a few map operations.
 package hub
 
@@ -27,8 +27,8 @@ const (
 	sessionTTL    = 10 * time.Minute
 	sweepInterval = time.Minute
 
-	// Challenge codes are short enough to read out, without look-alike
-	// characters (0/o, 1/l/i).
+	// Challenge and room codes are short enough to read out, without
+	// look-alike characters (0/o, 1/l/i).
 	codeAlphabet = "abcdefghjkmnpqrstuvwxyz23456789"
 	codeLength   = 6
 )
@@ -38,6 +38,13 @@ const (
 const (
 	modeRandom = "random" // paired from the matchmaking queue
 	modeFriend = "friend" // one player opened the other's challenge link
+	modeRoom   = "room"   // a multiplayer game started from a room link
+)
+
+// How many players a multiplayer room takes. It starts by itself when full.
+const (
+	roomMin = 3
+	roomMax = game.MaxPlayers
 )
 
 type Config struct {
@@ -67,6 +74,7 @@ type Hub struct {
 	sessions   map[string]*session // by token
 	queue      []*session
 	challenges map[string]*session // by code
+	rooms      map[string]*room    // by code
 	conns      int
 	connsByIP  map[string]int
 	online     int // players in running matches or the queue, as last broadcast
@@ -81,33 +89,36 @@ type session struct {
 	match     *match  // current or just-finished match; nil in the lobby
 	queued    bool
 	challenge string // code of the challenge link waiting for a friend
+	room      *room  // waiting room the player is in
 	lastSeen  time.Time
 }
 
 type match struct {
 	id       string
 	mode     string
-	players  [2]*session // seat 0 plays X, seat 1 plays O
+	players  []*session // seat i plays game.SeatMark(i)
 	game     *game.Game
 	deadline time.Time
 	timer    *time.Timer
 	timerGen int // invalidates timers that fire after being replaced
-	rematch  [2]bool
-	left     [2]bool
+	rematch  []bool
+	left     []bool
 }
 
-func (m *match) seat(s *session) int {
-	if m.players[0] == s {
-		return 0
-	}
-	return 1
+func (m *match) seat(s *session) int { return slices.Index(m.players, s) }
+
+// mark returns the mark s plays in m.
+func (m *match) mark(s *session) game.Mark { return game.SeatMark(m.seat(s)) }
+
+// playing reports whether s still has a part in m's running game.
+func (m *match) playing(s *session) bool {
+	return !m.game.Over() && m.game.Out(m.mark(s)) == ""
 }
 
-func seatMark(seat int) game.Mark {
-	if seat == 0 {
-		return game.X
-	}
-	return game.O
+// room gathers players for a multiplayer game until the host starts it.
+type room struct {
+	code    string
+	members []*session // in joining order; members[0] is the host
 }
 
 func New(cfg Config) *Hub {
@@ -120,6 +131,7 @@ func New(cfg Config) *Hub {
 		cfg:        cfg,
 		sessions:   make(map[string]*session),
 		challenges: make(map[string]*session),
+		rooms:      make(map[string]*room),
 		connsByIP:  make(map[string]int),
 	}
 }
@@ -152,7 +164,7 @@ func (h *Hub) refreshStats() {
 	defer h.mu.Unlock()
 	n := 0
 	for _, s := range h.sessions {
-		if s.queued || (s.match != nil && !s.match.game.Over()) {
+		if s.queued || (s.match != nil && s.match.playing(s)) {
 			n++
 		}
 	}
@@ -179,12 +191,13 @@ func (h *Hub) sweep(now time.Time) {
 			continue
 		}
 		if m := s.match; m != nil {
-			if !m.game.Over() {
+			if m.playing(s) {
 				continue // the turn timer will finish it
 			}
 			h.detach(s)
 		}
 		h.cancelChallenge(s)
+		h.leaveRoom(s)
 		delete(h.sessions, token)
 	}
 }
@@ -212,9 +225,18 @@ func (h *Hub) handle(c *client, msg protocol.Inbound) {
 		h.peek(s, msg.Code)
 	case "accept":
 		h.accept(s, msg.Code, msg.Name)
+	case "room":
+		h.createRoom(s, msg.Name)
+	case "peekRoom":
+		h.peekRoom(s, msg.Code)
+	case "enter":
+		h.enterRoom(s, msg.Code, msg.Name)
+	case "start":
+		h.startRoom(s)
 	case "cancel":
 		h.removeFromQueue(s)
 		h.cancelChallenge(s)
+		h.leaveRoom(s)
 		h.sendStatus(s)
 	case "move":
 		h.move(s, msg.X, msg.Y)
@@ -253,7 +275,11 @@ func (h *Hub) hello(c *client, token string) {
 	c.session = s
 	c.send(protocol.Welcome{Type: "welcome", Token: s.token, Name: s.name})
 	if s.match != nil {
-		h.broadcast(s.match) // also tells the opponent we're back
+		h.broadcast(s.match) // also tells the opponents we're back
+		return
+	}
+	if s.room != nil {
+		h.broadcastRoom(s.room) // the host is back
 		return
 	}
 	h.sendStatus(s)
@@ -291,28 +317,39 @@ func (h *Hub) disconnect(c *client) {
 	s.client = nil
 	s.lastSeen = time.Now()
 	h.removeFromQueue(s)
+	if r := s.room; r != nil {
+		// The host's room waits for them to come back; anyone else is out,
+		// and the client enters again when it reconnects.
+		if r.members[0] != s {
+			h.leaveRoom(s)
+		} else {
+			h.broadcastRoom(r)
+		}
+	}
 	if m := s.match; m != nil {
 		h.broadcast(m)
-		if m.game.Over() {
+		if !m.playing(s) {
 			h.abandonLater(s, m)
 		}
 	}
 }
 
 // prepare sets the player's name before they start looking for a game, and
-// leaves a finished match behind. It reports false, after telling the player
-// why, when the name is rejected or a game is still running.
+// leaves a match they no longer play in behind. It reports false, after
+// telling the player why, when the name is rejected or they are still
+// playing. Callers then leave whatever else the player was waiting in.
 func (h *Hub) prepare(s *session, rawName string) bool {
 	name, err := NormalizeName(rawName)
 	if err != nil {
 		h.removeFromQueue(s)
 		h.cancelChallenge(s)
+		h.leaveRoom(s)
 		s.client.send(protocol.Error{Type: "error", Code: "name", Message: err.Error()})
 		return false
 	}
 	s.name = name
 	if m := s.match; m != nil {
-		if !m.game.Over() {
+		if m.playing(s) {
 			s.client.sendError("finish or leave your current game first")
 			return false
 		}
@@ -326,6 +363,7 @@ func (h *Hub) join(s *session, rawName string) {
 		return
 	}
 	h.cancelChallenge(s)
+	h.leaveRoom(s)
 	if !s.queued {
 		s.queued = true
 		h.queue = append(h.queue, s)
@@ -350,8 +388,9 @@ func (h *Hub) createChallenge(s *session, rawName string) {
 		return
 	}
 	h.removeFromQueue(s)
+	h.leaveRoom(s)
 	if s.challenge == "" {
-		s.challenge = h.newChallengeCode()
+		s.challenge = h.newCode()
 		h.challenges[s.challenge] = s
 	}
 	h.sendStatus(s)
@@ -376,6 +415,7 @@ func (h *Hub) accept(s *session, code, rawName string) {
 	}
 	h.removeFromQueue(s)
 	h.cancelChallenge(s)
+	h.leaveRoom(s)
 	h.cancelChallenge(from)
 	h.startMatch(modeFriend, s, from)
 }
@@ -405,15 +445,147 @@ func (h *Hub) cancelChallenge(s *session) {
 	}
 }
 
-func (h *Hub) newChallengeCode() string {
+// newCode returns a code that no challenge link or room uses.
+func (h *Hub) newCode() string {
 	b := make([]byte, codeLength)
 	for {
 		_, _ = rand.Read(b)
 		for i := range b {
 			b[i] = codeAlphabet[int(b[i])%len(codeAlphabet)]
 		}
-		if code := string(b); h.challenges[code] == nil {
+		if code := string(b); h.challenges[code] == nil && h.rooms[code] == nil {
 			return code
+		}
+	}
+}
+
+// createRoom opens a multiplayer room with the player as its host. Asking
+// again while hosting one returns the same room.
+func (h *Hub) createRoom(s *session, rawName string) {
+	if !h.prepare(s, rawName) {
+		return
+	}
+	h.removeFromQueue(s)
+	h.cancelChallenge(s)
+	if r := s.room; r == nil || r.members[0] != s {
+		h.leaveRoom(s)
+		r = &room{code: h.newCode(), members: []*session{s}}
+		h.rooms[r.code] = r
+		s.room = r
+	}
+	h.broadcastRoom(s.room)
+}
+
+// peekRoom tells a player who opened a room link who is in it.
+func (h *Hub) peekRoom(s *session, code string) {
+	r := h.roomFor(s, code)
+	if r == nil {
+		return
+	}
+	names := make([]string, len(r.members))
+	for i, p := range r.members {
+		names[i] = p.name
+	}
+	s.client.send(protocol.RoomInvite{Type: "roomInvite", Code: r.code, Players: names, Max: roomMax})
+}
+
+// enterRoom adds the player to a room, which starts the game once it's full.
+func (h *Hub) enterRoom(s *session, code, rawName string) {
+	r := h.roomFor(s, code)
+	if r == nil {
+		return
+	}
+	if s.room == r {
+		h.sendStatus(s)
+		return
+	}
+	if !h.prepare(s, rawName) {
+		return
+	}
+	h.removeFromQueue(s)
+	h.cancelChallenge(s)
+	h.leaveRoom(s)
+	r.members = append(r.members, s)
+	s.room = r
+	if len(r.members) == roomMax {
+		h.startGame(r)
+		return
+	}
+	h.broadcastRoom(r)
+}
+
+// roomFor looks up a room code, telling the player when they can't join it.
+func (h *Hub) roomFor(s *session, code string) *room {
+	r := h.rooms[strings.ToLower(code)]
+	switch {
+	case r == nil:
+		h.roomError(s, "This game has already started or was closed. Ask for a new link.")
+		return nil
+	case s.room != r && len(r.members) >= roomMax:
+		h.roomError(s, "This game is full.")
+		return nil
+	}
+	return r
+}
+
+func (h *Hub) roomError(s *session, msg string) {
+	if s.client != nil {
+		s.client.send(protocol.Error{Type: "error", Code: "room", Message: msg})
+	}
+}
+
+// startRoom starts the game when the host asks for it.
+func (h *Hub) startRoom(s *session) {
+	r := s.room
+	switch {
+	case r == nil || r.members[0] != s:
+		s.client.sendError("only the host can start the game")
+	case len(r.members) < roomMin:
+		s.client.sendError("waiting for more players")
+	default:
+		h.startGame(r)
+	}
+}
+
+// startGame closes the room and seats its members in a new match.
+func (h *Hub) startGame(r *room) {
+	delete(h.rooms, r.code)
+	for _, p := range r.members {
+		p.room = nil
+	}
+	h.startMatch(modeRoom, r.members...)
+}
+
+// leaveRoom takes the player out of their waiting room. When the host
+// leaves, the room closes for everyone.
+func (h *Hub) leaveRoom(s *session) {
+	r := s.room
+	if r == nil {
+		return
+	}
+	s.room = nil
+	if r.members[0] != s {
+		r.members = slices.DeleteFunc(r.members, func(p *session) bool { return p == s })
+		h.broadcastRoom(r)
+		return
+	}
+	delete(h.rooms, r.code)
+	for _, p := range r.members[1:] {
+		p.room = nil
+		h.roomError(p, s.name+" closed the game.")
+		h.sendStatus(p)
+	}
+}
+
+// broadcastRoom sends the room's state to every connected member.
+func (h *Hub) broadcastRoom(r *room) {
+	members := make([]protocol.RoomMember, len(r.members))
+	for i, p := range r.members {
+		members[i] = protocol.RoomMember{Name: p.name, Connected: p.client != nil}
+	}
+	for i, p := range r.members {
+		if p.client != nil {
+			p.client.send(protocol.Room{Type: "room", Code: r.code, Players: members, You: i, Max: roomMax, Min: roomMin})
 		}
 	}
 }
@@ -428,18 +600,24 @@ func (h *Hub) removeFromQueue(s *session) {
 	}
 }
 
-// startMatch seats a and b in a new match, in random order.
-func (h *Hub) startMatch(mode string, a, b *session) {
-	if mrand.IntN(2) == 1 {
-		a, b = b, a
-	}
-	h.startMatchAs(mode, a, b)
+// startMatch seats players in a new match, in random order.
+func (h *Hub) startMatch(mode string, players ...*session) {
+	players = slices.Clone(players)
+	mrand.Shuffle(len(players), func(i, j int) { players[i], players[j] = players[j], players[i] })
+	h.startMatchAs(mode, players)
 }
 
-// startMatchAs seats x as X and o as O in a new match.
-func (h *Hub) startMatchAs(mode string, x, o *session) {
-	m := &match{id: newID(), mode: mode, players: [2]*session{x, o}, game: game.New()}
-	x.match, o.match = m, m
+// startMatchAs seats players in a new match in the given order, so the
+// first plays X and moves first.
+func (h *Hub) startMatchAs(mode string, players []*session) {
+	n := len(players)
+	m := &match{
+		id: newID(), mode: mode, players: players, game: game.New(n),
+		rematch: make([]bool, n), left: make([]bool, n),
+	}
+	for _, p := range players {
+		p.match = m
+	}
 	h.resetTimer(m)
 	h.broadcast(m)
 }
@@ -454,7 +632,7 @@ func (h *Hub) move(s *session, x, y int) {
 		s.client.sendError("that cell is too far away")
 		return
 	}
-	if err := m.game.Play(seatMark(m.seat(s)), game.Point{X: x, Y: y}); err != nil {
+	if err := m.game.Play(m.mark(s), game.Point{X: x, Y: y}); err != nil {
 		s.client.sendError(err.Error())
 		return
 	}
@@ -472,35 +650,63 @@ func (h *Hub) requestRematch(s *session) {
 		s.client.sendError("there is no finished game to rematch")
 		return
 	}
-	seat := m.seat(s)
-	if m.left[1-seat] {
-		s.client.sendError("your opponent has left")
+	var stayed []*session
+	for seat, p := range m.players {
+		if !m.left[seat] {
+			stayed = append(stayed, p)
+		}
+	}
+	need := 2
+	if m.mode == modeRoom {
+		need = roomMin
+	}
+	if len(stayed) < need {
+		s.client.sendError("not enough players are left for a rematch")
 		return
 	}
-	m.rematch[seat] = true
-	if m.rematch[0] && m.rematch[1] {
-		// Swap colours so the other player gets to move first.
-		h.startMatchAs(m.mode, m.players[1], m.players[0])
-		return
+	m.rematch[m.seat(s)] = true
+	for _, p := range stayed {
+		if !m.rematch[m.seat(p)] {
+			h.broadcast(m)
+			return
+		}
 	}
-	h.broadcast(m)
+	// Rotate the seats so the next player gets to move first. With two
+	// players, that swaps colours.
+	h.startMatchAs(m.mode, append(stayed[1:], stayed[0]))
 }
 
 // leave takes the player back to the lobby, resigning a running game.
 func (h *Hub) leave(s *session) {
 	h.removeFromQueue(s)
 	h.cancelChallenge(s)
+	h.leaveRoom(s)
 	if m := s.match; m != nil {
-		if !m.game.Over() {
-			m.game.Forfeit(seatMark(m.seat(s)), game.Resign)
-			h.gameEnded(m)
-		}
+		h.forfeit(m, m.mark(s), game.Resign)
 		h.detach(s)
 	}
 	h.sendStatus(s)
 }
 
-// detach removes s from its finished match and lets the opponent know.
+// forfeit takes mark out of the running game in m, which ends it when only
+// one player is left.
+func (h *Hub) forfeit(m *match, mark game.Mark, reason game.Reason) {
+	g := m.game
+	if g.Over() || g.Out(mark) != "" {
+		return
+	}
+	wasTurn := g.Turn() == mark
+	g.Forfeit(mark, reason)
+	switch {
+	case g.Over():
+		h.gameEnded(m)
+	case wasTurn:
+		h.resetTimer(m)
+	}
+}
+
+// detach removes s from a match they no longer play in and lets the others
+// know.
 func (h *Hub) detach(s *session) {
 	m := s.match
 	seat := m.seat(s)
@@ -531,8 +737,7 @@ func (h *Hub) turnExpired(m *match, gen int) {
 	if gen != m.timerGen || m.game.Over() {
 		return
 	}
-	m.game.Forfeit(m.game.Turn(), game.Timeout)
-	h.gameEnded(m)
+	h.forfeit(m, m.game.Turn(), game.Timeout)
 	h.broadcast(m)
 }
 
@@ -569,6 +774,8 @@ func (h *Hub) sendStatus(s *session) {
 	switch {
 	case s.match != nil:
 		s.client.send(h.gameState(s.match, s.match.seat(s)))
+	case s.room != nil:
+		h.broadcastRoom(s.room)
 	case s.queued:
 		s.client.send(protocol.Simple{Type: "queued"})
 		h.sendStats(s.client)
@@ -592,21 +799,31 @@ func (h *Hub) broadcast(m *match) {
 
 func (h *Hub) gameState(m *match, seat int) protocol.Game {
 	g := m.game
-	me, opp := m.players[seat], m.players[1-seat]
+	players := make([]protocol.Player, len(m.players))
+	for i, p := range m.players {
+		players[i] = protocol.Player{
+			Name:      p.name,
+			Mark:      game.SeatMark(i).String(),
+			Connected: p.client != nil,
+			Out:       string(g.Out(game.SeatMark(i))),
+			Left:      m.left[i],
+			Rematch:   m.rematch[i],
+		}
+	}
+	moves := make([]protocol.Move, len(g.Moves()))
+	for i, mv := range g.Moves() {
+		moves[i] = protocol.Move{mv.X, mv.Y, int(mv.Mark) - 1}
+	}
 	st := protocol.Game{
-		Type:              "game",
-		ID:                m.id,
-		Mode:              m.mode,
-		You:               seatMark(seat).String(),
-		YourName:          me.name,
-		OpponentName:      opp.name,
-		OpponentConnected: opp.client != nil,
-		Moves:             cells(g.Moves()),
-		Turn:              g.Turn().String(),
-		TurnMs:            h.cfg.TurnTime.Milliseconds(),
-		Over:              g.Over(),
-		Rematch:           protocol.Rematch{You: m.rematch[seat], Opponent: m.rematch[1-seat]},
-		OpponentLeft:      m.left[1-seat],
+		Type:    "game",
+		ID:      m.id,
+		Mode:    m.mode,
+		You:     seat,
+		Players: players,
+		Moves:   moves,
+		Turn:    g.Turn().String(),
+		TurnMs:  h.cfg.TurnTime.Milliseconds(),
+		Over:    g.Over(),
 	}
 	if g.Over() {
 		st.Winner = g.Winner().String()

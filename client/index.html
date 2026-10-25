@@ -41,14 +41,21 @@
     <script type="module" src="{{js}}"></script>
   </head>
   <body>
-    <!-- X and O, drawn with the same proportions as the board's canvas marks
-         so both come out the same size. Used below via <use href="#mark-x">. -->
+    <!-- The marks, drawn with the same proportions as the board's canvas
+         marks so they come out the same size. Used below via
+         <use href="#mark-x">. -->
     <svg class="sprite" aria-hidden="true">
       <symbol id="mark-x" viewBox="0 0 100 100">
         <path d="M22 22L78 78M78 22L22 78" fill="none" stroke="currentColor" stroke-width="12" stroke-linecap="round" />
       </symbol>
       <symbol id="mark-o" viewBox="0 0 100 100">
         <circle cx="50" cy="50" r="30" fill="none" stroke="currentColor" stroke-width="12" />
+      </symbol>
+      <symbol id="mark-t" viewBox="0 0 100 100">
+        <path d="M50 21L78.6 70.5H21.4Z" fill="none" stroke="currentColor" stroke-width="12" stroke-linejoin="round" />
+      </symbol>
+      <symbol id="mark-s" viewBox="0 0 100 100">
+        <rect x="27" y="27" width="46" height="46" fill="none" stroke="currentColor" stroke-width="12" stroke-linejoin="round" />
       </symbol>
     </svg>
 
@@ -79,6 +86,15 @@
               <path d="M14 10a4.5 4.5 0 0 0-6.4 0l-3 3a4.5 4.5 0 0 0 6.4 6.4l1-1" />
             </svg>
             <span>Challenge a friend</span>
+          </button>
+          <button id="play-room" type="button" class="mode">
+            <svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true">
+              <circle cx="9" cy="8.5" r="3" />
+              <path d="M3.5 19a5.5 5.5 0 0 1 11 0" />
+              <circle cx="16.5" cy="9.5" r="2.5" />
+              <path d="M16 14.6a4.5 4.5 0 0 1 5 4.4" />
+            </svg>
+            <span>Group game (3–4)</span>
           </button>
           <button id="play-bot" type="button" class="mode">
             <svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true">
@@ -167,6 +183,27 @@
       </div>
     </section>
 
+    <section id="screen-room" class="screen centered" hidden>
+      <div class="card">
+        <div class="spinner" aria-hidden="true">
+          <svg class="mark-icon x"><use href="#mark-x" /></svg>
+          <svg class="mark-icon o"><use href="#mark-o" /></svg>
+          <svg class="mark-icon t"><use href="#mark-t" /></svg>
+          <svg class="mark-icon s"><use href="#mark-s" /></svg>
+        </div>
+        <h2>Waiting for players…</h2>
+        <p id="room-hint" class="muted"></p>
+        <div class="link-box">
+          <span id="room-link" class="link-text"></span>
+          <button id="room-copy" type="button" class="small">Copy</button>
+        </div>
+        <button id="room-share" type="button" hidden>Share link</button>
+        <ol id="room-players" class="room-players"></ol>
+        <button id="room-start" type="button" class="primary">Start the game</button>
+        <button id="room-leave" type="button">Cancel</button>
+      </div>
+    </section>
+
     <section id="screen-invite" class="screen centered" hidden>
       <form id="invite-form" class="card" novalidate>
         <div class="logo" aria-hidden="true">
@@ -175,7 +212,7 @@
         </div>
         <p class="eyebrow">amőba · five in a row</p>
         <h2 id="invite-title">Opening the challenge…</h2>
-        <p class="muted">Get five in a row on an endless board before they do.</p>
+        <p id="invite-hint" class="muted">Get five in a row on an endless board before they do.</p>
         <div class="field">
           <label for="invite-name">Your name</label>
           <input
@@ -213,6 +250,14 @@
         <div class="player" id="player-o" data-mark="O">
           <span class="who"><span class="pname"></span><span class="tag"></span></span>
           <svg class="mark-icon o mark" aria-hidden="true"><use href="#mark-o" /></svg>
+        </div>
+        <div class="player" id="player-t" data-mark="T" hidden>
+          <svg class="mark-icon t mark" aria-hidden="true"><use href="#mark-t" /></svg>
+          <span class="who"><span class="pname"></span><span class="tag"></span></span>
+        </div>
+        <div class="player" id="player-s" data-mark="S" hidden>
+          <span class="who"><span class="pname"></span><span class="tag"></span></span>
+          <svg class="mark-icon s mark" aria-hidden="true"><use href="#mark-s" /></svg>
         </div>
       </header>
 

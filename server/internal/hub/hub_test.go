@@ -3,6 +3,7 @@ package hub
 import (
 	"cmp"
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http/httptest"
 	"strings"
@@ -15,7 +16,8 @@ import (
 	"github.com/gmiszori/amoeba/server/internal/protocol"
 )
 
-// message is the union of every outbound message's fields.
+// message is the union of every outbound message's fields, except
+// roomInvite's (see testClient.roomInvite).
 type message struct {
 	protocol.Game
 	Token   string `json:"token"`
@@ -23,7 +25,15 @@ type message struct {
 	Message string `json:"message"`
 	Code    string `json:"code"`
 	Online  int    `json:"online"`
+	Max     int    `json:"max"`
+	Min     int    `json:"min"`
 }
+
+// me returns the receiving player's seat in a game.
+func (m message) me() protocol.Player { return m.Players[m.You] }
+
+// opp returns the other player in a two-player game.
+func (m message) opp() protocol.Player { return m.Players[1-m.You] }
 
 type testClient struct {
 	t    *testing.T
@@ -75,16 +85,44 @@ func (c *testClient) send(v any) {
 // expect reads messages until one of type typ satisfies ok.
 func (c *testClient) expect(typ string, ok func(message) bool) message {
 	c.t.Helper()
+	for {
+		var m message
+		c.decode(c.next(typ), &m)
+		if ok == nil || ok(m) {
+			return m
+		}
+	}
+}
+
+func (c *testClient) roomInvite() protocol.RoomInvite {
+	c.t.Helper()
+	var inv protocol.RoomInvite
+	c.decode(c.next("roomInvite"), &inv)
+	return inv
+}
+
+// next reads messages until one of type typ arrives, and returns it.
+func (c *testClient) next(typ string) []byte {
+	c.t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 	for {
-		var m message
-		if err := wsjson.Read(ctx, c.conn, &m); err != nil {
+		var raw json.RawMessage
+		if err := wsjson.Read(ctx, c.conn, &raw); err != nil {
 			c.t.Fatalf("waiting for %q: %v", typ, err)
 		}
-		if m.Type == typ && (ok == nil || ok(m)) {
-			return m
+		var head struct{ Type string }
+		c.decode(raw, &head)
+		if head.Type == typ {
+			return raw
 		}
+	}
+}
+
+func (c *testClient) decode(raw []byte, v any) {
+	c.t.Helper()
+	if err := json.Unmarshal(raw, v); err != nil {
+		c.t.Fatalf("decoding %s: %v", raw, err)
 	}
 }
 
@@ -112,7 +150,7 @@ func matchPair(t *testing.T, url string) (x, o *testClient, xToken, oToken strin
 	if ga.ID != gb.ID || ga.You == gb.You {
 		t.Fatalf("bad pairing: %+v / %+v", ga.Game, gb.Game)
 	}
-	if ga.You == "X" {
+	if ga.You == 0 {
 		return a, b, aTok, bTok
 	}
 	return b, a, bTok, aTok
@@ -157,11 +195,11 @@ func TestRematchSwapsColours(t *testing.T) {
 	o.expect("game", func(m message) bool { return m.Over })
 
 	x.send(protocol.Inbound{Type: "rematch"})
-	o.expect("game", func(m message) bool { return m.Over && m.Rematch.Opponent })
+	o.expect("game", func(m message) bool { return m.Over && m.opp().Rematch })
 	o.send(protocol.Inbound{Type: "rematch"})
 
 	g := x.expect("game", func(m message) bool { return m.ID != first.ID })
-	if g.You != "O" || g.Over {
+	if g.You != 1 || g.Over {
 		t.Fatalf("rematch state for old X: %+v", g.Game)
 	}
 }
@@ -173,17 +211,17 @@ func TestReconnectResumesGame(t *testing.T) {
 	g := o.expect("game", func(m message) bool { return len(m.Moves) == 1 })
 
 	x.conn.Close(websocket.StatusNormalClosure, "")
-	o.expect("game", func(m message) bool { return !m.OpponentConnected })
+	o.expect("game", func(m message) bool { return !m.opp().Connected })
 
 	x2 := dial(t, url)
 	if tok := x2.hello(xToken); tok != xToken {
 		t.Fatalf("reconnect got a new token")
 	}
 	resumed := x2.expect("game", nil)
-	if resumed.ID != g.ID || resumed.You != "X" || len(resumed.Moves) != 1 {
+	if resumed.ID != g.ID || resumed.You != 0 || len(resumed.Moves) != 1 {
 		t.Fatalf("resumed state: %+v", resumed.Game)
 	}
-	o.expect("game", func(m message) bool { return m.OpponentConnected })
+	o.expect("game", func(m message) bool { return m.opp().Connected })
 }
 
 func TestLeaveResigns(t *testing.T) {
@@ -191,7 +229,7 @@ func TestLeaveResigns(t *testing.T) {
 	o.send(protocol.Inbound{Type: "leave"})
 	o.expect("lobby", nil)
 	g := x.expect("game", func(m message) bool { return m.Over })
-	if g.Winner != "X" || g.Reason != "resign" || !g.OpponentLeft {
+	if g.Winner != "X" || g.Reason != "resign" || !g.opp().Left {
 		t.Fatalf("after opponent left: %+v", g.Game)
 	}
 	x.send(protocol.Inbound{Type: "rematch"})
@@ -331,11 +369,11 @@ func TestRematchCancelledWhenOpponentLeavesSite(t *testing.T) {
 	x, o, _, _ := matchPair(t, startServer(t, 150*time.Millisecond))
 	o.expect("game", func(m message) bool { return m.Over })
 	o.send(protocol.Inbound{Type: "rematch"})
-	o.expect("game", func(m message) bool { return m.Rematch.You })
+	o.expect("game", func(m message) bool { return m.me().Rematch })
 
 	x.conn.Close(websocket.StatusNormalClosure, "") // closes the page
-	g := o.expect("game", func(m message) bool { return m.OpponentLeft })
-	if !g.Rematch.You {
+	g := o.expect("game", func(m message) bool { return m.opp().Left })
+	if !g.me().Rematch {
 		t.Fatal("lost track of our own rematch request")
 	}
 	o.send(protocol.Inbound{Type: "rematch"})
@@ -348,14 +386,14 @@ func TestBriefDropKeepsRematch(t *testing.T) {
 	first := o.expect("game", func(m message) bool { return m.Over })
 
 	x.conn.Close(websocket.StatusNormalClosure, "")
-	o.expect("game", func(m message) bool { return !m.OpponentConnected })
+	o.expect("game", func(m message) bool { return !m.opp().Connected })
 	x2 := dial(t, url)
 	x2.hello(xToken)
 	x2.expect("game", func(m message) bool { return m.ID == first.ID })
 	time.Sleep(1200 * time.Millisecond) // past the grace period
 
 	x2.send(protocol.Inbound{Type: "rematch"})
-	o.expect("game", func(m message) bool { return m.Rematch.Opponent && !m.OpponentLeft })
+	o.expect("game", func(m message) bool { return m.opp().Rematch && !m.opp().Left })
 	o.send(protocol.Inbound{Type: "rematch"})
 	o.expect("game", func(m message) bool { return m.ID != first.ID })
 }
@@ -380,7 +418,7 @@ func TestChallengeLink(t *testing.T) {
 	b.send(protocol.Inbound{Type: "accept", Code: code, Name: "bob"})
 	ga := a.expect("game", nil)
 	gb := b.expect("game", nil)
-	if ga.ID != gb.ID || ga.Mode != "friend" || ga.OpponentName != "bob" || gb.OpponentName != "alice" {
+	if ga.ID != gb.ID || ga.Mode != "friend" || ga.opp().Name != "bob" || gb.opp().Name != "alice" {
 		t.Fatalf("challenge game: %+v / %+v", ga.Game, gb.Game)
 	}
 
@@ -431,4 +469,159 @@ func TestChallengeRejections(t *testing.T) {
 	if e := b.expect("error", nil); e.Code != "challenge" {
 		t.Fatalf("cancelled link: %+v", e)
 	}
+}
+
+// openRoom has a host open a room and the given guests enter it. It returns
+// everyone, host first, and the room code.
+func openRoom(t *testing.T, url string, guests ...string) ([]*testClient, string) {
+	t.Helper()
+	host := dial(t, url)
+	host.hello("")
+	host.send(protocol.Inbound{Type: "room", Name: "host"})
+	code := host.expect("room", nil).Code
+	clients := []*testClient{host}
+	for _, name := range guests {
+		c := dial(t, url)
+		c.hello("")
+		c.send(protocol.Inbound{Type: "enter", Code: code, Name: name})
+		clients = append(clients, c)
+	}
+	return clients, code
+}
+
+// bySeat orders the players of a freshly started game by seat.
+func bySeat(t *testing.T, clients []*testClient) []*testClient {
+	t.Helper()
+	seats := make([]*testClient, len(clients))
+	var id string
+	for _, c := range clients {
+		g := c.expect("game", nil)
+		if id != "" && g.ID != id {
+			t.Fatalf("players ended up in different games")
+		}
+		id = g.ID
+		seats[g.You] = c
+	}
+	return seats
+}
+
+func TestRoomGame(t *testing.T) {
+	url := startServer(t, 150*time.Millisecond)
+	cs, code := openRoom(t, url, "bob")
+	host := cs[0]
+	host.expect("room", func(m message) bool { return len(m.Players) == 2 })
+
+	peeker := dial(t, url)
+	peeker.hello("")
+	peeker.send(protocol.Inbound{Type: "peekRoom", Code: strings.ToUpper(code)})
+	if inv := peeker.roomInvite(); inv.Code != code || len(inv.Players) != 2 || inv.Players[0] != "host" {
+		t.Fatalf("room invite: %+v", inv)
+	}
+
+	cs[1].send(protocol.Inbound{Type: "start"})
+	if e := cs[1].expect("error", nil); !strings.Contains(e.Message, "host") {
+		t.Fatalf("guest starting: %+v", e)
+	}
+	host.send(protocol.Inbound{Type: "start"})
+	if e := host.expect("error", nil); !strings.Contains(e.Message, "more players") {
+		t.Fatalf("starting with two: %+v", e)
+	}
+
+	peeker.send(protocol.Inbound{Type: "enter", Code: code, Name: "carol"})
+	host.expect("room", func(m message) bool { return len(m.Players) == 3 })
+	host.send(protocol.Inbound{Type: "start"})
+	seats := bySeat(t, append(cs, peeker))
+
+	// Nobody moves: X and then O run out of time and drop out, and the
+	// third player is the last one left.
+	g := seats[2].expect("game", func(m message) bool { return m.Players[0].Out != "" })
+	if g.Over || g.Turn != "O" || g.Players[0].Out != "timeout" || g.Mode != "room" {
+		t.Fatalf("after X timed out: %+v", g.Game)
+	}
+	g = seats[2].expect("game", func(m message) bool { return m.Over })
+	if g.Winner != "T" || g.Reason != "timeout" {
+		t.Fatalf("game over: %+v", g.Game)
+	}
+
+	// The room is gone once the game starts.
+	late := dial(t, url)
+	late.hello("")
+	late.send(protocol.Inbound{Type: "peekRoom", Code: code})
+	if e := late.expect("error", nil); e.Code != "room" {
+		t.Fatalf("started room: %+v", e)
+	}
+
+	// A rematch needs everyone and moves the first seat to the end.
+	for _, c := range seats {
+		c.expect("game", func(m message) bool { return m.Over })
+		c.send(protocol.Inbound{Type: "rematch"})
+	}
+	if r := seats[1].expect("game", func(m message) bool { return m.ID != g.ID }); r.You != 0 {
+		t.Fatalf("rematch: old O got seat %d, want 0", r.You)
+	}
+}
+
+func TestFullRoomStartsItself(t *testing.T) {
+	cs, _ := openRoom(t, startServer(t, time.Minute), "bob", "carol", "dave")
+	seats := bySeat(t, cs)
+	seats[0].move(0, 0)
+	g := seats[3].expect("game", func(m message) bool { return len(m.Moves) == 1 })
+	if len(g.Players) != 4 || g.Turn != "O" || g.Moves[0] != (protocol.Move{0, 0, 0}) {
+		t.Fatalf("four-player game: %+v", g.Game)
+	}
+
+	// A player who leaves resigns, and the others play on.
+	seats[1].send(protocol.Inbound{Type: "leave"})
+	g = seats[0].expect("game", func(m message) bool { return m.Players[1].Out != "" })
+	if g.Over || g.Turn != "T" || g.Players[1].Out != "resign" {
+		t.Fatalf("after O left: %+v", g.Game)
+	}
+}
+
+func TestRoomMembersComeAndGo(t *testing.T) {
+	url := startServer(t, time.Minute)
+	cs, code := openRoom(t, url, "bob", "carol")
+	host := cs[0]
+	host.expect("room", func(m message) bool { return len(m.Players) == 3 })
+
+	cs[1].conn.Close(websocket.StatusNormalClosure, "")
+	r := host.expect("room", func(m message) bool { return len(m.Players) == 2 })
+	if r.Players[1].Name != "carol" {
+		t.Fatalf("after bob dropped: %+v", r.Players)
+	}
+
+	host.send(protocol.Inbound{Type: "cancel"})
+	host.expect("lobby", nil)
+	if e := cs[2].expect("error", nil); e.Code != "room" || !strings.Contains(e.Message, "closed") {
+		t.Fatalf("host closed the room: %+v", e)
+	}
+	cs[2].expect("lobby", nil)
+
+	late := dial(t, url)
+	late.hello("")
+	late.send(protocol.Inbound{Type: "enter", Code: code, Name: "dave"})
+	if e := late.expect("error", nil); e.Code != "room" {
+		t.Fatalf("closed room: %+v", e)
+	}
+}
+
+func TestRoomWaitsForHost(t *testing.T) {
+	url := startServer(t, time.Minute)
+	host := dial(t, url)
+	tok := host.hello("")
+	host.send(protocol.Inbound{Type: "room", Name: "host"})
+	code := host.expect("room", nil).Code
+	guest := dial(t, url)
+	guest.hello("")
+	guest.send(protocol.Inbound{Type: "enter", Code: code, Name: "bob"})
+	guest.expect("room", func(m message) bool { return len(m.Players) == 2 })
+
+	host.conn.Close(websocket.StatusNormalClosure, "")
+	guest.expect("room", func(m message) bool { return !m.Players[0].Connected })
+	host2 := dial(t, url)
+	host2.hello(tok)
+	if r := host2.expect("room", nil); r.Code != code || r.You != 0 || len(r.Players) != 2 {
+		t.Fatalf("host back: %+v", r)
+	}
+	guest.expect("room", func(m message) bool { return m.Players[0].Connected })
 }

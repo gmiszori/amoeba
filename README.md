@@ -18,6 +18,11 @@ direction.
   one turns up within 5 seconds, you're offered a game against Amőbot.
 - **Challenge a friend.** Get a one-time link (`/c/<code>`) to send to a
   friend. The game starts when they open it and accept.
+- **Group games.** Play with 3 or 4 friends: the host shares a link
+  (`/r/<code>`) and starts once 3 players are in; with 4 it starts by
+  itself. The players get ✕, ◯, a green △ and an amber □. A player who runs
+  out of time or leaves drops out, their marks stay on the board, and the
+  last player left wins.
 - **Amőbot.** A computer opponent that runs in the browser, so it works
   offline too, with no turn clock. It blocks and finishes fours and open
   threes, but looks only one move ahead, so a double threat beats it.
@@ -67,7 +72,7 @@ Browser ─► [webserver proxy :80/:443] ─► [web: Caddy, automatic HTTPS] �
 
 | Directory | What |
 |-----------|------|
-| `server/` | Go WebSocket server: sessions, matchmaking queue, challenge links, game rules, turn clock. All state is in memory, and the server is authoritative. |
+| `server/` | Go WebSocket server: sessions, matchmaking queue, challenge links, group game rooms, game rules, turn clock. All state is in memory, and the server is authoritative. |
 | `client/` | Plain `index.html` + CSS + TypeScript (canvas game), bundled by esbuild (`build.mjs`), plus the service worker (`sw.js`). Amőbot lives in `src/scripts/bot.ts`; `npm test` runs its tests. `tsc` only type-checks. Also holds the `Caddyfile`; the production image is Caddy serving the build. |
 | `client/art/` | Sources for the app icons and the link preview image. `client/art/render.sh` renders them into `client/public/` with a headless Chrome, Brave or Chromium. |
 | `docs/protocol.md` | The WebSocket message protocol. |

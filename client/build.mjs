@@ -102,7 +102,7 @@ if (!dev) {
   watch("public", { recursive: true }, () =>
     cp("public", outdir, { recursive: true }).catch((err) => console.warn(`copy public/: ${err.message}`)),
   );
-  // Challenge links (/c/<code>) are the same page; anything without a file
-  // gets index.html, like the Caddyfile's rewrite.
+  // Challenge and group game links (/c/<code>, /r/<code>) are the same page;
+  // anything without a file gets index.html, like the Caddyfile's rewrite.
   await ctx.serve({ host: "0.0.0.0", port: 4321, servedir: outdir, fallback: `${outdir}/index.html` });
 }

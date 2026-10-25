@@ -4,8 +4,8 @@
 @import "@fontsource-variable/jetbrains-mono/index.css";
 
 /* Tokens from the miszori.dev design system: near-monochrome surfaces, one
-   indigo accent (focus, hover borders), frosted cards. The X/O colours are
-   the game's own and stay blue and red. */
+   indigo accent (focus, hover borders), frosted cards. The mark colours are
+   the game's own: blue X, red O, green triangle (T), amber square (S). */
 :root {
   color-scheme: light dark;
   --bg: #ffffff;
@@ -21,6 +21,10 @@
   --x-preview: #7fa8f2;
   --o: #dc2626;
   --o-preview: #ef8b8b;
+  --t: #059669;
+  --t-preview: #6cc7a4;
+  --s: #d97706;
+  --s-preview: #efb768;
   --live: #16a34a;
   --board-bg: #ffffff;
   --board-grid: rgba(15, 23, 42, 0.16);
@@ -50,6 +54,10 @@
     --x-preview: #8fb6ff;
     --o: #f04848;
     --o-preview: #ff8a8a;
+    --t: #34d399;
+    --t-preview: #86e5c1;
+    --s: #fbbf24;
+    --s-preview: #fcd67a;
     --live: #22c55e;
     --board-bg: #000000;
     --board-grid: rgba(255, 255, 255, 0.17);
@@ -99,6 +107,12 @@ body {
 }
 .o {
   color: var(--o);
+}
+.t {
+  color: var(--t);
+}
+.s {
+  color: var(--s);
 }
 .muted {
   color: var(--text-muted);
@@ -388,7 +402,7 @@ button.big .btn-icon {
 
 .modes {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(2, 1fr);
   gap: 8px;
   margin-top: 20px;
 }
@@ -464,6 +478,36 @@ button.mode .btn-icon {
   padding: 0 14px;
 }
 
+/* The waiting room's list of players, with empty seats still to fill. */
+.room-players {
+  display: grid;
+  gap: 6px;
+  margin: 16px 0 8px;
+  padding: 0;
+  list-style: none;
+  text-align: left;
+}
+.room-players li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+  padding: 0 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--pill-bg);
+  font-weight: 600;
+}
+.room-players li.empty {
+  border-style: dashed;
+  background: none;
+  font-weight: 500;
+  color: var(--text-sub);
+}
+.room-players .tag {
+  margin-left: auto;
+}
+
 .bot-offer {
   margin-top: 16px;
 }
@@ -515,10 +559,25 @@ button.mode .btn-icon {
   transition: border-color var(--ease), opacity var(--ease);
   opacity: 0.7;
 }
-#player-o {
+/* X and the triangle on the left, O and the square on the right, the clock
+   between them. */
+#player-o,
+#player-s {
+  grid-column: 3;
   justify-self: end;
   justify-content: flex-end;
   text-align: right;
+}
+#player-x,
+#player-o {
+  grid-row: 1;
+}
+#player-t {
+  grid-column: 1;
+}
+.hud.multi .clock {
+  grid-column: 2;
+  grid-row: 1 / span 2;
 }
 .player.active {
   opacity: 1;
@@ -528,6 +587,15 @@ button.mode .btn-icon {
 }
 #player-o.active {
   border-color: var(--o);
+}
+#player-t.active {
+  border-color: var(--t);
+}
+#player-s.active {
+  border-color: var(--s);
+}
+.player.out .pname {
+  text-decoration: line-through;
 }
 .player .mark {
   flex: none;
@@ -589,6 +657,12 @@ button.mode .btn-icon {
 }
 .clock[data-turn="O"] .clock-bar {
   background: var(--o);
+}
+.clock[data-turn="T"] .clock-bar {
+  background: var(--t);
+}
+.clock[data-turn="S"] .clock-bar {
+  background: var(--s);
 }
 .clock.urgent {
   color: var(--o);

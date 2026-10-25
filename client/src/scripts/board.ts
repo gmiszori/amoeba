@@ -10,26 +10,33 @@ const MARK_WIDTH = 0.11; // stroke of a placed mark
 const GHOST_WIDTH = 0.085; // stroke of the dashed preview mark
 const X_PAD = 0.24; // inset of the X's arms from the cell edge
 const O_RADIUS = 0.29;
+const T_RADIUS = 0.33; // from the triangle's centre to its corners
+const T_DROP = 0.04; // moves the triangle down so it looks centred in the cell
+const S_HALF = 0.23; // half the square's side
 // Preview dashes: how many, and how long each is relative to the gaps.
 const X_DASHES = 4; // per arm; even, so the crossing falls in a gap
 const X_DASH_TO_GAP = 2.2;
 const O_DASHES = 8;
 const O_DASH_TO_GAP = 1.5;
+const T_DASHES = 3; // per side
+const S_DASHES = 2; // per side
+const POLY_DASH_TO_GAP = 1.5;
 
 interface Theme {
   bg: string;
   grid: string;
   lastMove: string;
-  X: string;
-  O: string;
-  previewX: string;
-  previewO: string;
+  mark: Record<Mark, string>;
+  preview: Record<Mark, string>;
 }
 
 interface Point {
   x: number;
   y: number;
 }
+
+/** Marks for moves alternating between X and O, as in a two-player game. */
+export const alternating = (n: number): Mark[] => Array.from({ length: n }, (_, i) => (i % 2 ? "O" : "X"));
 
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
 
@@ -55,7 +62,8 @@ export class BoardView {
   private theme!: Theme;
   private frame = 0;
 
-  private moves: Cell[] = [];
+  private moves: readonly Cell[] = [];
+  private marks: readonly Mark[] = [];
   private line: Cell[] | null = null;
   private winner: Mark | null = null;
   private preview: { cell: Cell; mark: Mark } | null = null;
@@ -84,8 +92,10 @@ export class BoardView {
     canvas.addEventListener("wheel", this.handleWheel, { passive: false });
   }
 
-  setModel(moves: Cell[], line: Cell[] | null, winner: Mark | null): void {
+  /** Shows the moves played so far; marks[i] is the mark of moves[i]. */
+  setModel(moves: readonly Cell[], marks: readonly Mark[], line: Cell[] | null, winner: Mark | null): void {
     this.moves = moves;
+    this.marks = marks;
     this.line = line;
     this.winner = winner;
     this.draw();
@@ -262,10 +272,8 @@ export class BoardView {
       bg: v("--board-bg"),
       grid: v("--board-grid"),
       lastMove: v("--board-last"),
-      X: v("--x"),
-      O: v("--o"),
-      previewX: v("--x-preview"),
-      previewO: v("--o-preview"),
+      mark: { X: v("--x"), O: v("--o"), T: v("--t"), S: v("--s") },
+      preview: { X: v("--x-preview"), O: v("--o-preview"), T: v("--t-preview"), S: v("--s-preview") },
     };
   }
 
@@ -306,7 +314,7 @@ export class BoardView {
     if (this.preview) {
       const [px, py] = this.preview.cell;
       ctx.globalAlpha = 0.14;
-      ctx.fillStyle = this.preview.mark === "X" ? theme.previewX : theme.previewO;
+      ctx.fillStyle = theme.preview[this.preview.mark];
       ctx.fillRect(this.sx(px), this.sy(py), s, s);
       ctx.globalAlpha = 1;
     }
@@ -332,13 +340,13 @@ export class BoardView {
 
     this.moves.forEach((cell, i) => {
       if (!visible(cell)) return;
-      const mark: Mark = i % 2 === 0 ? "X" : "O";
-      this.drawMark(cell, mark, theme[mark]);
+      const mark = this.marks[i];
+      this.drawMark(cell, mark, theme.mark[mark]);
     });
 
     if (this.preview && visible(this.preview.cell)) {
-      const color = this.preview.mark === "X" ? theme.previewX : theme.previewO;
-      this.drawGhost(this.preview.cell, this.preview.mark, color);
+      const { cell, mark } = this.preview;
+      this.drawGhost(cell, mark, theme.preview[mark]);
     }
 
     if (this.line && this.winner) {
@@ -349,14 +357,14 @@ export class BoardView {
       ctx.lineTo(this.sx(end[0] + 0.5), this.sy(end[1] + 0.5));
       ctx.lineCap = "round";
       ctx.lineWidth = Math.max(4, s * 0.16);
-      ctx.strokeStyle = theme[this.winner];
+      ctx.strokeStyle = theme.mark[this.winner];
       ctx.globalAlpha = 0.55;
       ctx.stroke();
       ctx.globalAlpha = 1;
     }
 
     if (last && this.offscreen(last)) {
-      this.drawPointer(last, this.moves.length % 2 === 1 ? theme.X : theme.O);
+      this.drawPointer(last, theme.mark[this.marks[this.moves.length - 1]]);
     }
   }
 
@@ -368,6 +376,7 @@ export class BoardView {
     ctx.strokeStyle = color;
     ctx.lineWidth = Math.max(2, s * MARK_WIDTH);
     ctx.lineCap = "round";
+    ctx.lineJoin = "round";
     ctx.beginPath();
     if (mark === "X") {
       const pad = s * X_PAD;
@@ -375,8 +384,12 @@ export class BoardView {
       ctx.lineTo(left + s - pad, top + s - pad);
       ctx.moveTo(left + s - pad, top + pad);
       ctx.lineTo(left + pad, top + s - pad);
-    } else {
+    } else if (mark === "O") {
       ctx.arc(left + s / 2, top + s / 2, s * O_RADIUS, 0, Math.PI * 2);
+    } else {
+      const corners = polygon(mark, left, top, s);
+      corners.forEach(({ x, y }, i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));
+      ctx.closePath();
     }
     ctx.stroke();
     ctx.restore();
@@ -418,6 +431,25 @@ export class BoardView {
           ctx.lineTo(x0 + b * dx, y0 + b * dy);
         }
       }
+    } else if (mark === "T" || mark === "S") {
+      // Each side gets the same number of dashes, with the corners in the
+      // middle of a gap.
+      const corners = polygon(mark, left, top, s);
+      const dashes = mark === "T" ? T_DASHES : S_DASHES;
+      corners.forEach((a, i) => {
+        const b = corners[(i + 1) % corners.length];
+        const length = Math.hypot(b.x - a.x, b.y - a.y);
+        const gap = length / (dashes * (POLY_DASH_TO_GAP + 1));
+        const dash = gap * POLY_DASH_TO_GAP;
+        const ux = (b.x - a.x) / length;
+        const uy = (b.y - a.y) / length;
+        for (let j = 0; j < dashes; j++) {
+          const from = gap / 2 + j * (dash + gap) + width / 2;
+          const to = from + dash - width;
+          ctx.moveTo(a.x + ux * from, a.y + uy * from);
+          ctx.lineTo(a.x + ux * to, a.y + uy * to);
+        }
+      });
     } else {
       const cx = left + s / 2;
       const cy = top + s / 2;
@@ -463,6 +495,26 @@ export class BoardView {
     ctx.fill();
     ctx.restore();
   }
+}
+
+/** The corners of a triangle (T) or square (S) mark in the cell at left, top. */
+function polygon(mark: "T" | "S", left: number, top: number, s: number): Point[] {
+  const cx = left + s / 2;
+  const cy = top + s / 2;
+  if (mark === "S") {
+    const h = s * S_HALF;
+    return [
+      { x: cx - h, y: cy - h },
+      { x: cx + h, y: cy - h },
+      { x: cx + h, y: cy + h },
+      { x: cx - h, y: cy + h },
+    ];
+  }
+  const r = s * T_RADIUS;
+  return [0, 1, 2].map((i) => {
+    const a = (i * 2 * Math.PI) / 3;
+    return { x: cx + r * Math.sin(a), y: cy + s * T_DROP - r * Math.cos(a) };
+  });
 }
 
 function sameCell(a: Cell | undefined, b: Cell | undefined): boolean {
