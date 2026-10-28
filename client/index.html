@@ -24,7 +24,7 @@
     <meta property="og:image" content="{{$origin}}/og-image.png" />
     <meta property="og:image:width" content="1200" />
     <meta property="og:image:height" content="630" />
-    <meta property="og:image:alt" content="An amőba board where blue X has five in a row" />
+    <meta property="og:image:alt" content="amőba, by miszori.dev" />
     <meta name="twitter:card" content="summary_large_image" />
 
     <!-- Installable app (PWA). -->
@@ -63,10 +63,6 @@
       <!-- A finished game drawn faintly behind the menu; purely decorative. -->
       <canvas id="backdrop" class="backdrop" aria-hidden="true"></canvas>
       <div class="home-content">
-        <div class="logo" aria-hidden="true">
-          <svg class="mark-icon x"><use href="#mark-x" /></svg>
-          <svg class="mark-icon o"><use href="#mark-o" /></svg>
-        </div>
         <h1>amőba</h1>
         <p class="tagline">Five in a row on an endless board.</p>
 
@@ -87,21 +83,30 @@
               <circle cx="16.5" cy="9.5" r="2.5" />
               <path d="M16 14.6a4.5 4.5 0 0 1 5 4.4" />
             </svg>
-            <span>Play with friends</span>
+            <span class="mode-text">
+              <span class="mode-name">Play with friends</span>
+              <span class="mode-desc">Share a link, 2–4 players</span>
+            </span>
           </button>
           <button id="play-bot" type="button" class="mode">
             <svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true">
               <rect x="5" y="8" width="14" height="11" rx="3" />
               <path d="M12 4.5V8M9.5 13h.01M14.5 13h.01M9.5 16h5" />
             </svg>
-            <span>Play Amőbot</span>
+            <span class="mode-text">
+              <span class="mode-name">Play Amőbot</span>
+              <span class="mode-desc">The computer, works offline</span>
+            </span>
           </button>
           <button id="play-local" type="button" class="mode">
             <svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true">
               <rect x="6.5" y="3" width="11" height="18" rx="2.5" />
               <path d="M10.5 17.5h3" />
             </svg>
-            <span>Same device</span>
+            <span class="mode-text">
+              <span class="mode-name">Same device</span>
+              <span class="mode-desc">Two players, one screen</span>
+            </span>
           </button>
         </div>
 
@@ -111,6 +116,14 @@
         </p>
         <button id="install" type="button" class="link install" hidden>Install the app</button>
       </div>
+      <!-- The miszori.dev endorsement every project carries. -->
+      <footer class="project-footer">
+        <span>amőba</span>
+        <span class="endorse">
+          by <a class="tlink" href="https://miszori.dev">miszori.dev</a>
+          <span class="gm-tile" aria-hidden="true">GM</span>
+        </span>
+      </footer>
     </section>
 
     <section id="screen-name" class="screen centered" hidden>
@@ -186,7 +199,6 @@
           <svg class="mark-icon x"><use href="#mark-x" /></svg>
           <svg class="mark-icon o"><use href="#mark-o" /></svg>
         </div>
-        <p class="eyebrow">amőba · five in a row</p>
         <h2 id="invite-title">Opening the invitation…</h2>
         <p id="invite-hint" class="muted">Get five in a row on an endless board before they do.</p>
         <div class="field">

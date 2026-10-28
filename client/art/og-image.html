@@ -1,12 +1,16 @@
 <!doctype html>
-<!-- Link preview image, 1200×630. render.sh screenshots this page into
-     public/og-image.png. The board uses the game's own mark proportions
-     (src/scripts/board.ts). -->
+<!-- Link preview image, 1200×630, in the miszori.dev brand's project layout:
+     plain black, the address small at the top, the project name large in
+     amoeba's dark-theme orange ink, "by miszori.dev" under it. render.sh
+     screenshots this page into public/og-image.png. -->
 <html lang="en">
   <head>
     <meta charset="utf-8" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@500;600;900&display=block" rel="stylesheet" />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;600;700&display=block"
+      rel="stylesheet"
+    />
     <style>
       html,
       body {
@@ -14,119 +18,44 @@
         width: 1200px;
         height: 630px;
         overflow: hidden;
-        background: #ffffff;
-        font-family: "Inter", sans-serif;
-        color: #000;
+        background: #000000;
+        font-family: "Instrument Sans", sans-serif;
       }
-      .glow {
-        position: absolute;
-        inset: 0;
-        background: radial-gradient(700px circle at 100% 0%, rgba(79, 70, 229, 0.08), transparent 70%);
-      }
-      #board {
-        position: absolute;
-        top: 0;
-        right: 0;
-        width: 660px;
-        height: 630px;
-        -webkit-mask-image: linear-gradient(to right, transparent, #000 30%);
-      }
-      .text {
-        position: absolute;
-        left: 84px;
-        top: 50%;
-        transform: translateY(-50%);
-      }
-      .logo {
+      body {
+        box-sizing: border-box;
         display: flex;
-        gap: 18px;
-        margin-bottom: 10px;
+        flex-direction: column;
+        justify-content: space-between;
+        padding: 72px;
       }
-      .logo svg {
-        width: 56px;
-        height: 56px;
+      .top,
+      .by {
+        font-size: 30px;
+        color: #a3a3a3;
       }
-      h1 {
-        margin: 0;
-        font-size: 156px;
-        line-height: 1;
-        font-weight: 900;
-        letter-spacing: -0.045em;
-      }
-      p {
-        margin: 22px 0 0;
-        font-size: 38px;
-        font-weight: 500;
-        color: #2c3441;
-        letter-spacing: -0.01em;
-      }
-      .modes {
-        display: flex;
-        gap: 12px;
-        margin-top: 34px;
-      }
-      .modes span {
-        padding: 10px 20px;
-        border: 2px solid rgba(15, 23, 42, 0.12);
-        border-radius: 999px;
-        font-size: 24px;
+      .top {
         font-weight: 600;
-        color: #2c3441;
-        background: #fff;
+      }
+      .name {
+        display: block;
+        font-size: 184px;
+        font-weight: 700;
+        letter-spacing: -0.05em;
+        line-height: 0.86;
+        color: #ff9a4d;
+      }
+      .by {
+        display: block;
+        margin-top: 28px;
+        font-weight: 400;
       }
     </style>
   </head>
   <body>
-    <div class="glow"></div>
-    <svg id="board" viewBox="0 0 660 630"></svg>
-    <div class="text">
-      <div class="logo">
-        <svg viewBox="0 0 100 100"><path d="M22 22L78 78M78 22L22 78" fill="none" stroke="#2563eb" stroke-width="12" stroke-linecap="round" /></svg>
-        <svg viewBox="0 0 100 100"><circle cx="50" cy="50" r="30" fill="none" stroke="#dc2626" stroke-width="12" /></svg>
-      </div>
-      <h1>amőba</h1>
-      <p>Five in a row on an endless board.</p>
-      <div class="modes"><span>Online</span><span>With a friend</span><span>Vs. computer</span></div>
+    <span class="top">amoeba.miszori.dev</span>
+    <div>
+      <span class="name">amőba</span>
+      <span class="by">by miszori.dev</span>
     </div>
-    <script>
-      const S = 70; // cell size
-      const X0 = 15, Y0 = -20; // grid offset
-      const ns = "http://www.w3.org/2000/svg";
-      const board = document.getElementById("board");
-      const el = (tag, attrs) => {
-        const e = document.createElementNS(ns, tag);
-        for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, v);
-        board.append(e);
-        return e;
-      };
-      for (let x = X0; x <= 660; x += S) el("line", { x1: x, y1: 0, x2: x, y2: 630, stroke: "rgba(15,23,42,0.16)", "stroke-width": 2 });
-      for (let y = Y0; y <= 630; y += S) el("line", { x1: 0, y1: y, x2: 660, y2: y, stroke: "rgba(15,23,42,0.16)", "stroke-width": 2 });
-
-      const cx = (c) => X0 + c * S, cy = (r) => Y0 + r * S;
-      const X = (c, r) => {
-        const p = S * 0.24, l = cx(c), t = cy(r);
-        el("path", {
-          d: `M${l + p} ${t + p}L${l + S - p} ${t + S - p}M${l + S - p} ${t + p}L${l + p} ${t + S - p}`,
-          stroke: "#2563eb", "stroke-width": S * 0.11, "stroke-linecap": "round", fill: "none",
-        });
-      };
-      const O = (c, r) => el("circle", {
-        cx: cx(c) + S / 2, cy: cy(r) + S / 2, r: S * 0.29,
-        stroke: "#dc2626", "stroke-width": S * 0.11, fill: "none",
-      });
-
-      // Blue's winning diagonal, red's attempts around it.
-      const win = [[3, 2], [4, 3], [5, 4], [6, 5], [7, 6]];
-      win.forEach(([c, r]) => X(c, r));
-      [[4, 2], [5, 3], [3, 4], [6, 4], [2, 6], [5, 6], [8, 5]].forEach(([c, r]) => O(c, r));
-      [[3, 5], [6, 3], [7, 2]].forEach(([c, r]) => X(c, r));
-      [[8, 1]].forEach(([c, r]) => O(c, r));
-
-      const [a, b] = [win[0], win[win.length - 1]];
-      el("line", {
-        x1: cx(a[0]) + S / 2, y1: cy(a[1]) + S / 2, x2: cx(b[0]) + S / 2, y2: cy(b[1]) + S / 2,
-        stroke: "#2563eb", "stroke-width": S * 0.16, "stroke-linecap": "round", opacity: 0.55,
-      });
-    </script>
   </body>
 </html>

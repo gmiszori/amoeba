@@ -465,7 +465,7 @@ func (h *Hub) roomFor(s *session, code string) *room {
 	r := h.rooms[strings.ToLower(code)]
 	switch {
 	case r == nil:
-		h.roomError(s, "This room was closed. Ask for a new link.")
+		h.roomError(s, "Room not found.")
 		return nil
 	case s.room != r && (r.match == nil || s.match != r.match) && r.seated() >= roomMax:
 		// Players of the room's last game already have a seat.

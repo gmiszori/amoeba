@@ -692,7 +692,7 @@ function renderHud(): void {
   ui.resultTitle.textContent = !winner
     ? "It's a draw"
     : won
-      ? "You won! 🎉"
+      ? "You won!"
       : bot || !duel
         ? `${name(winner)} won`
         : "You lost";
@@ -758,7 +758,7 @@ function renderLocalHud(g: GameState): void {
 
   ui.result.hidden = !g.over;
   if (g.over && g.winner) {
-    ui.resultTitle.textContent = `${markName(g.winner)} wins! 🎉`;
+    ui.resultTitle.textContent = `${markName(g.winner)} wins!`;
     ui.resultTitle.className = g.winner.toLowerCase();
     ui.resultDetail.textContent = "Five in a row.";
     ui.resultNote.hidden = true;
