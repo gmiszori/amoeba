@@ -105,9 +105,12 @@ the `caddy_data` volume, so they survive rebuilds. To update, run
 `git pull && docker compose up --build -d`. Restarting the server ends
 running games, because game state is kept in memory.
 
-If the domain's DNS is on Cloudflare, use "DNS only" (grey cloud). With the
-orange-cloud proxy every player would appear to come from a Cloudflare
-address, and they would all share one per-IP connection limit.
+The domain can go through Cloudflare's proxy (orange cloud), which passes
+WebSockets on. Caddy then takes each player's address from Cloudflare's
+`CF-Connecting-IP` header, trusted only from Cloudflare's published ranges
+(`trusted_proxies` in `client/Caddyfile`), so the per-IP limits still see
+real players. Keep those ranges in step with
+https://www.cloudflare.com/ips/.
 
 To run the production stack locally, start the webserver proxy with
 `PUBLIC_BIND_IP=127.0.0.1` and `AMOEBA_DOMAIN=localhost`, set
