@@ -337,6 +337,74 @@ func TestSessionLimit(t *testing.T) {
 	}
 }
 
+func TestNewSessionLimitPerIP(t *testing.T) {
+	url := startHub(t, Config{TurnTime: time.Minute, NewSessionsPerIP: 2})
+	dial(t, url).hello("")
+	token := dial(t, url).hello("")
+	c := dial(t, url)
+	c.send(protocol.Inbound{Type: "hello"})
+	if e := c.expect("error", nil); !strings.Contains(e.Message, "too many new players") {
+		t.Fatalf("unexpected error %q", e.Message)
+	}
+	// Coming back with an existing session doesn't start a new one.
+	dial(t, url).hello(token)
+}
+
+func TestSilentConnectionIsClosed(t *testing.T) {
+	c := dial(t, startHub(t, Config{TurnTime: time.Minute, HelloTimeout: 100 * time.Millisecond}))
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	for {
+		if _, _, err := c.conn.Read(ctx); err != nil {
+			if errors.Is(err, context.DeadlineExceeded) {
+				t.Fatal("connection without hello was kept open")
+			}
+			return
+		}
+	}
+}
+
+func TestHelloKeepsConnectionOpen(t *testing.T) {
+	c := dial(t, startHub(t, Config{TurnTime: time.Minute, HelloTimeout: 100 * time.Millisecond}))
+	c.hello("")
+	time.Sleep(300 * time.Millisecond)
+	c.send(protocol.Inbound{Type: "join", Name: "alice"})
+	c.expect("queued", nil)
+}
+
+func TestUnnamedSessionsExpireSooner(t *testing.T) {
+	h := New(Config{TurnTime: time.Minute})
+	now := time.Now()
+	h.sessions["unnamed"] = &session{token: "unnamed", lastSeen: now.Add(-2 * unnamedSessionTTL)}
+	h.sessions["named"] = &session{token: "named", name: "alice", lastSeen: now.Add(-2 * unnamedSessionTTL)}
+	h.newSessions["192.0.2.1"] = minuteCount{start: now.Add(-2 * time.Minute), count: 5}
+	h.sweep(now)
+	if h.sessions["unnamed"] != nil {
+		t.Error("session that never got a name was kept")
+	}
+	if h.sessions["named"] == nil {
+		t.Error("named session was dropped before sessionTTL")
+	}
+	if len(h.newSessions) != 0 {
+		t.Error("old new-session counts were kept")
+	}
+}
+
+func TestLimitKey(t *testing.T) {
+	for in, want := range map[string]string{
+		"192.0.2.7":            "192.0.2.7",
+		"::ffff:192.0.2.7":     "192.0.2.7",
+		"2001:db8:1:2:3:4:5:6": "2001:db8:1:2::/64",
+		"2001:db8:1:2:ffff::1": "2001:db8:1:2::/64",
+		"2001:db8:1:3::1":      "2001:db8:1:3::/64",
+		"not an address":       "not an address",
+	} {
+		if got := limitKey(in); got != want {
+			t.Errorf("limitKey(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
 func TestZalgoNameRejected(t *testing.T) {
 	if _, err := NormalizeName("á̂̃b"); err == nil {
 		t.Fatal("name with three stacked combining marks was accepted")

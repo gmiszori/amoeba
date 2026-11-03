@@ -23,9 +23,12 @@ const (
 	// maxCoord keeps coordinates in a sane range; nobody pans a million cells.
 	maxCoord = 1_000_000
 	// sessionTTL is how long a disconnected session outside a running game is
-	// kept so a returning player can pick up where they left off.
-	sessionTTL    = 10 * time.Minute
-	sweepInterval = time.Minute
+	// kept so a returning player can pick up where they left off. A session
+	// that never got a name has nothing to pick up, and goes after
+	// unnamedSessionTTL.
+	sessionTTL        = 10 * time.Minute
+	unnamedSessionTTL = time.Minute
+	sweepInterval     = time.Minute
 
 	// Room codes are short enough to read out, without look-alike characters
 	// (0/o, 1/l/i), and long enough (31^8, about 850 billion) that nobody
@@ -54,10 +57,14 @@ type Config struct {
 	OriginPatterns []string
 
 	// Abuse limits; zero means the default. Per-IP is generous because a whole
-	// lecture hall can share one NAT address.
-	MaxConns      int // default 5000
-	MaxConnsPerIP int // default 50
-	MaxSessions   int // default 20000
+	// lecture hall can share one NAT address; an IPv6 /64 counts as one IP
+	// (see limitKey). MaxConns stays well below the webserver proxy's 4096
+	// connections, which every site on the host shares.
+	MaxConns         int           // default 1500
+	MaxConnsPerIP    int           // default 50
+	MaxSessions      int           // default 20000
+	NewSessionsPerIP int           // new sessions per IP per minute; default 30
+	HelloTimeout     time.Duration // to say hello after connecting; default 10s
 
 	// RematchGrace is how long a player who drops off after a game has to come
 	// back before the opponent is told no rematch is coming. Default 3s, so a
@@ -82,7 +89,9 @@ type Hub struct {
 	rooms     map[string]*room // by code
 	conns     int
 	connsByIP map[string]int
-	online    int // players in running matches or the queue, as last broadcast
+	// newSessions counts the sessions each IP started in the current minute.
+	newSessions map[string]minuteCount
+	online      int // players in running matches or the queue, as last broadcast
 }
 
 // session is a player identity that survives reconnects. The client keeps its
@@ -95,6 +104,11 @@ type session struct {
 	queued   bool
 	room     *room // room the player is waiting in
 	lastSeen time.Time
+}
+
+type minuteCount struct {
+	start time.Time
+	count int
 }
 
 type match struct {
@@ -148,18 +162,21 @@ func (r *room) seated() int {
 }
 
 func New(cfg Config) *Hub {
-	cfg.MaxConns = cmp.Or(cfg.MaxConns, 5000)
+	cfg.MaxConns = cmp.Or(cfg.MaxConns, 1500)
 	cfg.MaxConnsPerIP = cmp.Or(cfg.MaxConnsPerIP, 50)
 	cfg.MaxSessions = cmp.Or(cfg.MaxSessions, 20000)
+	cfg.NewSessionsPerIP = cmp.Or(cfg.NewSessionsPerIP, 30)
+	cfg.HelloTimeout = cmp.Or(cfg.HelloTimeout, 10*time.Second)
 	cfg.RematchGrace = cmp.Or(cfg.RematchGrace, 3*time.Second)
 	cfg.GuestGrace = cmp.Or(cfg.GuestGrace, 10*time.Second)
 	cfg.HostGrace = cmp.Or(cfg.HostGrace, time.Minute)
 	cfg.StatsInterval = cmp.Or(cfg.StatsInterval, time.Second)
 	return &Hub{
-		cfg:       cfg,
-		sessions:  make(map[string]*session),
-		rooms:     make(map[string]*room),
-		connsByIP: make(map[string]int),
+		cfg:         cfg,
+		sessions:    make(map[string]*session),
+		rooms:       make(map[string]*room),
+		connsByIP:   make(map[string]int),
+		newSessions: make(map[string]minuteCount),
 	}
 }
 
@@ -213,8 +230,17 @@ func (h *Hub) sendStats(c *client) {
 func (h *Hub) sweep(now time.Time) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
+	for ip, n := range h.newSessions {
+		if now.Sub(n.start) >= time.Minute {
+			delete(h.newSessions, ip)
+		}
+	}
 	for token, s := range h.sessions {
-		if s.client != nil || now.Sub(s.lastSeen) < sessionTTL {
+		ttl := sessionTTL
+		if s.name == "" && s.room == nil && s.match == nil {
+			ttl = unnamedSessionTTL
+		}
+		if s.client != nil || now.Sub(s.lastSeen) < ttl {
 			continue
 		}
 		if m := s.match; m != nil {
@@ -282,6 +308,11 @@ func (h *Hub) hello(c *client, token string) {
 			c.closeSoon()
 			return
 		}
+		if !h.allowNewSession(c.ip, time.Now()) {
+			c.sendError("too many new players from your network, please try again in a minute")
+			c.closeSoon()
+			return
+		}
 		s = &session{token: newID()}
 		h.sessions[s.token] = s
 	}
@@ -304,6 +335,21 @@ func (h *Hub) hello(c *client, token string) {
 		return
 	}
 	h.sendStatus(s)
+}
+
+// allowNewSession reports whether ip may start another session this minute,
+// and counts it. Called with h.mu held.
+func (h *Hub) allowNewSession(ip string, now time.Time) bool {
+	n := h.newSessions[ip]
+	if now.Sub(n.start) >= time.Minute {
+		n = minuteCount{start: now}
+	}
+	if n.count >= h.cfg.NewSessionsPerIP {
+		return false
+	}
+	n.count++
+	h.newSessions[ip] = n
+	return true
 }
 
 // acquireConn reserves a connection slot for ip, or reports that a limit is hit.

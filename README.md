@@ -131,7 +131,10 @@ warns once.
   128-bit random values.
 - **Limits.** WebSockets only accept the site's own origin. Messages are
   capped at 1 KB and 10 per second per connection, and connections (50 per IP,
-  5000 total), sessions and moves per game are limited.
+  1500 total), new sessions (30 per IP per minute) and moves per game are
+  limited. An IPv6 /64 counts as one IP. A connection that doesn't say hello
+  within 10 seconds is closed, and a session that never picked a name is
+  forgotten after a minute.
 - **Headers.** Caddy sends a strict Content-Security-Policy (only the site's
   own scripts, styles and WebSocket), HSTS, and headers that stop other sites
   from framing the game.

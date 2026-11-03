@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"net/netip"
 	"strings"
 	"time"
 
@@ -34,12 +35,13 @@ type client struct {
 	out    chan []byte
 	cancel context.CancelFunc
 
+	ip      string   // limitKey of the player's address
 	session *session // guarded by Hub.mu
 }
 
 // ServeHTTP upgrades the request to a WebSocket and serves it until it closes.
 func (h *Hub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	ip := clientIP(r)
+	ip := limitKey(clientIP(r))
 	if !h.acquireConn(ip) {
 		http.Error(w, "too many connections", http.StatusTooManyRequests)
 		return
@@ -53,13 +55,24 @@ func (h *Hub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	conn.SetReadLimit(readLimit)
 
 	ctx, cancel := context.WithCancel(r.Context())
-	c := &client{conn: conn, out: make(chan []byte, sendBuffer), cancel: cancel}
+	c := &client{conn: conn, out: make(chan []byte, sendBuffer), cancel: cancel, ip: ip}
 	defer func() {
 		cancel()
 		h.disconnect(c)
 		conn.CloseNow()
 	}()
 	go c.writeLoop(ctx)
+	// A connection that hasn't said hello by then is closed, so idle sockets
+	// can't hold connection slots.
+	helloTimer := time.AfterFunc(h.cfg.HelloTimeout, func() {
+		h.mu.Lock()
+		idle := c.session == nil
+		h.mu.Unlock()
+		if idle {
+			cancel()
+		}
+	})
+	defer helloTimer.Stop()
 
 	limit := limiter{tokens: msgBurst, last: time.Now()}
 	for {
@@ -159,4 +172,19 @@ func clientIP(r *http.Request) string {
 		return r.RemoteAddr
 	}
 	return host
+}
+
+// limitKey groups an address for the per-IP limits: IPv4 as is, IPv6 by its
+// /64, since one device or customer usually gets a whole /64 and could
+// otherwise switch addresses at will.
+func limitKey(ip string) string {
+	addr, err := netip.ParseAddr(ip)
+	if err != nil {
+		return ip
+	}
+	if addr = addr.Unmap(); addr.Is6() {
+		prefix, _ := addr.Prefix(64)
+		return prefix.String()
+	}
+	return addr.String()
 }
