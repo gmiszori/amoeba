@@ -33,7 +33,7 @@
 
 	header {
 		# Only our own scripts, styles and WebSocket; no framing by other sites.
-		Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self' ws://{http.request.hostport} wss://{http.request.hostport}; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
+		Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self' wss://{http.request.hostport}; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
 		# Browsers ignore this over plain HTTP, so it's harmless locally.
 		Strict-Transport-Security "max-age=31536000"
 		X-Content-Type-Options nosniff
