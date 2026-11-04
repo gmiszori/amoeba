@@ -1,4 +1,4 @@
-FROM node:26-alpine AS source
+FROM node:26-alpine@sha256:c6ad9e9c1d80f6eb607c26b4b0a132ff7a2344fad1c78ea3baa2a7d4c8de6d94 AS source
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci
@@ -13,7 +13,7 @@ CMD ["npm", "run", "dev"]
 FROM source AS build
 RUN npm run build
 
-FROM caddy:2.11-alpine
+FROM caddy:2.11-alpine@sha256:70b3180738b46cd88e49b300d790ae448a0aca3f58edef0f000bb57d619a9ab3
 # The stock binary carries a file capability for binding ports 80/443, but a
 # binary with file capabilities can't start in a container with all
 # capabilities dropped. We drop them and let compose allow unprivileged

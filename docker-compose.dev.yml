@@ -34,7 +34,7 @@ services:
           action: rebuild
 
   web:
-    image: caddy:2.11-alpine
+    image: caddy:2.11-alpine@sha256:70b3180738b46cd88e49b300d790ae448a0aca3f58edef0f000bb57d619a9ab3
     volumes:
       - ./client/Caddyfile.dev:/etc/caddy/Caddyfile:ro
     ports:

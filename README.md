@@ -152,8 +152,9 @@ warns once.
   can't fake one.
 
 When deploying, don't publish the server's port 8080, because its per-IP
-limit trusts the `X-Forwarded-For` header that Caddy sets. Rebuild now and
-then (`docker compose build --pull`) to pick up base-image security fixes.
+limit trusts the `X-Forwarded-For` header that Caddy sets. Base images are
+pinned by digest, so a rebuild won't change them: Dependabot proposes updates,
+and merging one and rebuilding applies it.
 
 ## License
 
