@@ -33,6 +33,7 @@ services:
     mem_limit: 128m
     environment:
       DOMAIN: ${DOMAIN:-localhost}
+      ORIGIN_PULL: ${ORIGIN_PULL:-off} # see client/Caddyfile
     # Lets the unprivileged Caddy user bind 80 and 443 without capabilities.
     sysctls:
       net.ipv4.ip_unprivileged_port_start: 80

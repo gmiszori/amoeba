@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"slices"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -693,4 +694,58 @@ func TestRoomClosesWithoutHost(t *testing.T) {
 		t.Fatalf("host gone: %+v", e)
 	}
 	guest.expect("lobby", nil)
+}
+
+// queueClient is a client with no connection, to watch what send queues.
+func queueClient(total *atomic.Int64) (*client, context.Context) {
+	ctx, cancel := context.WithCancel(context.Background())
+	return &client{out: make(chan []byte, sendBuffer), cancel: cancel, total: total}, ctx
+}
+
+func TestSlowClientIsDisconnectedByQueuedBytes(t *testing.T) {
+	var total atomic.Int64
+	c, ctx := queueClient(&total)
+	big := strings.Repeat("x", 40<<10) // about a long game's state
+	for range 3 {
+		c.send(big)
+	}
+	if ctx.Err() != nil {
+		t.Fatal("disconnected after 3 states, within the per-client limit")
+	}
+	c.send(big)
+	if ctx.Err() == nil {
+		t.Fatalf("still connected with %d bytes queued, want a disconnect past %d", c.queued.Load(), maxQueuedBytes)
+	}
+	if c.queued.Load() != total.Load() || len(c.out) != 3 {
+		t.Fatalf("queued %d, total %d, %d messages; the rejected message must not count", c.queued.Load(), total.Load(), len(c.out))
+	}
+}
+
+func TestQueuedBytesAreCappedAcrossClients(t *testing.T) {
+	var total atomic.Int64
+	total.Store(maxTotalQueuedBytes - 100)
+	c, ctx := queueClient(&total)
+	c.send(strings.Repeat("x", 200))
+	if ctx.Err() == nil {
+		t.Fatal("still connected although all clients together passed the limit")
+	}
+	if total.Load() != maxTotalQueuedBytes-100 {
+		t.Fatalf("total %d, want it unchanged", total.Load())
+	}
+}
+
+func TestQueuedBytesAreReleased(t *testing.T) {
+	srv := httptest.NewServer(New(Config{TurnTime: time.Minute}))
+	t.Cleanup(srv.Close)
+	h := srv.Config.Handler.(*Hub)
+	c := dial(t, "ws"+strings.TrimPrefix(srv.URL, "http"))
+	c.hello("")
+	c.conn.CloseNow()
+	deadline := time.Now().Add(3 * time.Second)
+	for h.queuedBytes.Load() != 0 {
+		if time.Now().After(deadline) {
+			t.Fatalf("%d bytes still counted after the only client left", h.queuedBytes.Load())
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
 }

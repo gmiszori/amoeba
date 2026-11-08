@@ -13,6 +13,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/gmiszori/amoeba/server/internal/game"
@@ -92,6 +93,8 @@ type Hub struct {
 	// newSessions counts the sessions each IP started in the current minute.
 	newSessions map[string]minuteCount
 	online      int // players in running matches or the queue, as last broadcast
+
+	queuedBytes atomic.Int64 // unsent outbound bytes across all clients
 }
 
 // session is a player identity that survives reconnects. The client keeps its

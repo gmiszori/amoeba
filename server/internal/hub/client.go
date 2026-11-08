@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/netip"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/coder/websocket"
@@ -21,6 +22,13 @@ const (
 	writeTimeout = 10 * time.Second
 	readLimit    = 1024
 	sendBuffer   = 64
+
+	// A client that reads slowly is disconnected once its unsent messages pass
+	// maxQueuedBytes, a few of a long game's ~40 KB states. maxTotalQueuedBytes
+	// caps all clients together, well below the server's 256 MB memory limit, so
+	// many slow connections can't crash it and end every game.
+	maxQueuedBytes      = 128 << 10
+	maxTotalQueuedBytes = 64 << 20
 
 	// A person sends maybe one message a second; this leaves plenty of room
 	// while stopping floods.
@@ -37,6 +45,9 @@ type client struct {
 
 	ip      string   // limitKey of the player's address
 	session *session // guarded by Hub.mu
+
+	queued atomic.Int64  // bytes waiting in out
+	total  *atomic.Int64 // bytes waiting in every client's out (Hub.queuedBytes)
 }
 
 // ServeHTTP upgrades the request to a WebSocket and serves it until it closes.
@@ -55,13 +66,20 @@ func (h *Hub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	conn.SetReadLimit(readLimit)
 
 	ctx, cancel := context.WithCancel(r.Context())
-	c := &client{conn: conn, out: make(chan []byte, sendBuffer), cancel: cancel, ip: ip}
+	c := &client{conn: conn, out: make(chan []byte, sendBuffer), cancel: cancel, ip: ip, total: &h.queuedBytes}
+	written := make(chan struct{})
 	defer func() {
 		cancel()
+		<-written
 		h.disconnect(c)
+		// Nothing writes or queues for c any more, so what's left in out is freed.
+		c.total.Add(-c.queued.Swap(0))
 		conn.CloseNow()
 	}()
-	go c.writeLoop(ctx)
+	go func() {
+		defer close(written)
+		c.writeLoop(ctx)
+	}()
 	// A connection that hasn't said hello by then is closed, so idle sockets
 	// can't hold connection slots.
 	helloTimer := time.AfterFunc(h.cfg.HelloTimeout, func() {
@@ -102,6 +120,7 @@ func (c *client) writeLoop(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case b := <-c.out:
+			c.unqueue(len(b))
 			wctx, cancel := context.WithTimeout(ctx, writeTimeout)
 			err = c.conn.Write(wctx, websocket.MessageText, b)
 			cancel()
@@ -118,18 +137,32 @@ func (c *client) writeLoop(ctx context.Context) {
 }
 
 // send queues v for writing. A client that can't keep up is disconnected
-// rather than allowed to block the hub.
+// rather than allowed to block the hub or fill its memory.
 func (c *client) send(v any) {
 	b, err := json.Marshal(v)
 	if err != nil {
 		slog.Error("marshal outbound message", "err", err)
 		return
 	}
+	n := int64(len(b))
+	queued, total := c.queued.Add(n), c.total.Add(n)
+	if queued > maxQueuedBytes || total > maxTotalQueuedBytes {
+		c.unqueue(len(b))
+		c.cancel()
+		return
+	}
 	select {
 	case c.out <- b:
 	default:
+		c.unqueue(len(b))
 		c.cancel()
 	}
+}
+
+// unqueue releases n bytes that left the queue or never entered it.
+func (c *client) unqueue(n int) {
+	c.queued.Add(-int64(n))
+	c.total.Add(-int64(n))
 }
 
 func (c *client) sendError(msg string) {

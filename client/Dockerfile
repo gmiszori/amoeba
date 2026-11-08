@@ -13,14 +13,14 @@ CMD ["npm", "run", "dev"]
 FROM source AS build
 RUN npm run build
 
-FROM caddy:2.11-alpine@sha256:70b3180738b46cd88e49b300d790ae448a0aca3f58edef0f000bb57d619a9ab3
+FROM caddy:2.11-alpine@sha256:78bd35025c7ba85961dd149ae670315129954e77abe2383ac47c89106b35ade9
 # The stock binary carries a file capability for binding ports 80/443, but a
 # binary with file capabilities can't start in a container with all
 # capabilities dropped. We drop them and let compose allow unprivileged
 # binding of 80/443 instead, then run as nobody. /data holds the TLS
 # certificates and must be writable by that user.
 RUN setcap -r /usr/bin/caddy && chown 65534:65534 /data /config
-COPY Caddyfile /etc/caddy/Caddyfile
+COPY Caddyfile origin-pull-ca.pem /etc/caddy/
 COPY --from=build /app/dist /srv
 USER 65534:65534
 EXPOSE 80 443

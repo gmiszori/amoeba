@@ -25,11 +25,29 @@
 	}
 }
 
+# Authenticated Origin Pulls. With ORIGIN_PULL=on in .env, the TLS handshake only
+# succeeds when the client presents the certificate that Cloudflare sends for this
+# zone, issued by our own CA in origin-pull-ca.pem. Other Cloudflare customers share
+# Cloudflare's addresses, so the firewall alone can't tell them apart; this can.
+# Off by default, for local development without Cloudflare in front. Setup and
+# rollback: docs/authenticated-origin-pulls.md in github.com/gmiszori/webserver-proxy.
+(origin_pull_on) {
+	tls {
+		client_auth {
+			mode require_and_verify
+			trust_pool file /etc/caddy/origin-pull-ca.pem
+		}
+	}
+}
+(origin_pull_off) {
+}
+
 # DOMAIN comes from .env. For a real domain Caddy gets and renews a Let's
 # Encrypt certificate automatically and redirects HTTP to HTTPS. "localhost"
 # gets a self-signed certificate; "http://localhost" serves plain HTTP.
 {$DOMAIN:localhost} {
 	encode zstd gzip
+	import origin_pull_{$ORIGIN_PULL:off}
 
 	header {
 		# Only our own scripts, styles and WebSocket; no framing by other sites.
@@ -42,6 +60,18 @@
 		Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=(), usb=()"
 		Cross-Origin-Opener-Policy same-origin
 		-Server
+	}
+
+	# The security contact (RFC 9116); the policy itself is on miszori.dev.
+	handle /.well-known/security.txt {
+		header Content-Type "text/plain; charset=utf-8"
+		respond <<TXT
+			Contact: mailto:gergo@miszori.dev
+			Expires: 2027-11-01T00:00:00.000Z
+			Preferred-Languages: en, de, hu
+			Policy: https://miszori.dev/security/
+			Canonical: https://{$DOMAIN}/.well-known/security.txt
+			TXT 200
 	}
 
 	handle /ws {
