@@ -3,6 +3,18 @@
 	# Caddy runs unprivileged and can't add its local CA to the system trust
 	# store; only relevant for DOMAIN=localhost.
 	skip_install_trust
+	# No access log. Caddy's own messages (errors, warnings) can include the
+	# request that caused them; leave out everything about the player.
+	log {
+		format filter {
+			wrap json
+			fields {
+				request>headers delete
+				request>remote_ip delete
+				request>client_ip delete
+			}
+		}
+	}
 	servers {
 		# Only the webserver proxy reaches this Caddy. It passes TLS through
 		# and prepends a PROXY header with the peer's address, trusted from
